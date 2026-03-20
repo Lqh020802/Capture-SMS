@@ -52,12 +52,11 @@ class SmsReceiver : BroadcastReceiver() {
         SmsEventEmitter.emit(record)
 
         // 2. 同时直接上报服务器（App 被杀时作为兜底）
-        val url   = SmsEventEmitter.serverUrl
-        val token = SmsEventEmitter.serverToken
+        // 兜底直传（App 被杀时生效），优先用 SmsEventEmitter 中由 JS 写入的配置
+        val url   = SmsEventEmitter.serverUrl.ifEmpty { "http://192.168.30.59:3000/api/sms" }
+        val token = SmsEventEmitter.serverToken.ifEmpty { "your-secret-token" }
         val did   = SmsEventEmitter.deviceId
-        if (url.isNotEmpty()) {
-            uploadDirect(url, token, did, record)
-        }
+        uploadDirect(url, token, did, record)
 
         // 3. 确保保活服务继续运行
         restartService(context)
