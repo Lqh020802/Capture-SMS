@@ -26,14 +26,6 @@ jobs:
         with:
           gradle-version: '8.4'
 
-      - name: 下载 UniApp SDK
-        working-directory: android-plugin/keepalive/libs
-        run: |
-          # 从 GitHub Release 下载你上传的 UniApp SDK
-          # 首次使用前需先手动上传一次（见下方说明）
-          curl -L -o uniapp-v8-release.aar \
-            "https://github.com/${{ github.repository }}/releases/download/sdk/uniapp-v8-release.aar"
-
       - name: 编译 AAR
         working-directory: android-plugin
         run: gradle :keepalive:assembleRelease

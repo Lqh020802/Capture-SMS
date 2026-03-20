@@ -19,8 +19,8 @@ android {
 }
 
 dependencies {
-    // UniApp 插件 SDK（编译时依赖，不打包进 AAR）
-    compileOnly fileTree(dir: 'libs', include: ['*.jar', '*.aar'])
+    // UniApp SDK 桩（仅编译用，不打包进 AAR，运行时由真实 SDK 提供）
+    compileOnly project(':sdk-stubs')
     implementation 'androidx.core:core-ktx:1.9.0'
-    implementation 'androidx.core:core:1.9.0'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.6.4'
 }

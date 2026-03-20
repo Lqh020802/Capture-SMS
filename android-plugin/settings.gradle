@@ -1,2 +1,3 @@
 rootProject.name = "CaptureKeepalive"
+include ':sdk-stubs'
 include ':keepalive'
