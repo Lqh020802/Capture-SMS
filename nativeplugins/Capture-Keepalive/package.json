@@ -1,0 +1,23 @@
+{
+    "name": "Capture-Keepalive",
+    "id": "Capture-Keepalive",
+    "version": "1.0.0",
+    "description": "短信监控后台保活插件，支持双卡",
+    "_dp_type": "nativeplugin",
+    "_dp_nativeplugin": {
+        "android": {
+            "plugins": [
+                {
+                    "type": "module",
+                    "name": "Capture-Keepalive",
+                    "class": "com.capturesms.keepalive.KeepaliveModule"
+                }
+            ],
+            "hooksClass": "",
+            "minSdkVersion": "21",
+            "integrateType": "aar",
+            "dependencies": [],
+            "abis": ["armeabi-v7a", "arm64-v8a"]
+        }
+    }
+}

@@ -1,0 +1,11 @@
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+*.DS_Store
+
+# UniApp SDK 二进制（通过 GitHub Release 管理，不提交到代码库）
+android-plugin/keepalive/libs/*.aar
+android-plugin/keepalive/libs/*.jar
+.claude/
