@@ -25,7 +25,7 @@ class KeepaliveService : Service() {
     }
 
     private var smsObserver: ContentObserver? = null
-    private var lastSmsId: Long = -1L
+    @Volatile private var lastSmsId: Long = -1L
 
     override fun onCreate() {
         super.onCreate()
@@ -129,11 +129,9 @@ class KeepaliveService : Service() {
                         "timestamp" to date
                     )
 
-                    // 通知 JS 层
-                    SmsEventEmitter.emit(record)
-
-                    // 兜底直传（无 JS 监听时）
-                    if (!SmsEventEmitter.hasListener()) {
+                    // 去重：emit 返回 false 表示已由广播处理过，跳过
+                    val emitted = SmsEventEmitter.emit(record)
+                    if (emitted && !SmsEventEmitter.hasListener()) {
                         val url   = SmsEventEmitter.serverUrl.ifEmpty { "http://192.168.30.194:8014/sms/upload" }
                         val token = SmsEventEmitter.serverToken.ifEmpty { "" }
                         val did   = SmsEventEmitter.deviceId

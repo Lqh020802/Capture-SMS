@@ -41,10 +41,10 @@ class SmsReceiver : BroadcastReceiver() {
         )
 
         // 通知 JS 层（App 运行时）
-        SmsEventEmitter.emit(record)
+        val emitted = SmsEventEmitter.emit(record)
 
-        // 兜底直传：仅当 JS 层无监听（App 已被杀）时才直接上报
-        if (!SmsEventEmitter.hasListener()) {
+        // 兜底直传：仅当未重复且 JS 层无监听（App 已被杀）时才直接上报
+        if (emitted && !SmsEventEmitter.hasListener()) {
             val url   = SmsEventEmitter.serverUrl.ifEmpty { "http://192.168.30.194:8014/sms/upload" }
             val token = SmsEventEmitter.serverToken.ifEmpty { "" }
             val did   = SmsEventEmitter.deviceId
