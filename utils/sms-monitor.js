@@ -47,6 +47,13 @@ export function stopSmsMonitor() {
     const plugin = getPlugin()
     if (plugin) plugin.stopService(() => {})
     _stopPolling()
+    // 注销动态广播接收器，防止多次开关后重复注册
+    if (_receiver) {
+        try {
+            plus.android.runtimeMainActivity().unregisterReceiver(_receiver)
+        } catch (e) {}
+        _receiver = null
+    }
     isMonitoring = false
     // #endif
 }
