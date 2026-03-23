@@ -51,12 +51,13 @@ class SmsReceiver : BroadcastReceiver() {
         // 1. 通知 JS 层（如果 App 在前台/后台运行）
         SmsEventEmitter.emit(record)
 
-        // 2. 同时直接上报服务器（App 被杀时作为兜底）
-        // 兜底直传（App 被杀时生效），优先用 SmsEventEmitter 中由 JS 写入的配置
-        val url   = SmsEventEmitter.serverUrl.ifEmpty { "http://192.168.30.194:8014/sms/upload" }
-        val token = SmsEventEmitter.serverToken.ifEmpty { "" }
-        val did   = SmsEventEmitter.deviceId
-        uploadDirect(url, token, did, record)
+        // 2. 兜底直传：仅当 JS 层无监听（App 已被杀）时才直接上报，避免重复
+        if (!SmsEventEmitter.hasListener()) {
+            val url   = SmsEventEmitter.serverUrl.ifEmpty { "http://192.168.30.194:8014/sms/upload" }
+            val token = SmsEventEmitter.serverToken.ifEmpty { "" }
+            val did   = SmsEventEmitter.deviceId
+            uploadDirect(url, token, did, record)
+        }
 
         // 3. 确保保活服务继续运行
         restartService(context)

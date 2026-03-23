@@ -22,6 +22,8 @@ object SmsEventEmitter {
         listener = null
     }
 
+    fun hasListener(): Boolean = listener != null
+
     /**
      * 触发 JS 事件（在主线程调用）
      */
