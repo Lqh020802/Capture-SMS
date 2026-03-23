@@ -47,9 +47,10 @@ export function startSmsMonitor() {
     const plugin = getPlugin()
     if (plugin) {
         _startWithPlugin(plugin)
-    } else {
-        _startWithPlusAndroid()
     }
+    // 无论插件是否可用，始终注册动态接收器（前台双保险）
+    _startWithPlusAndroid()
+    isMonitoring = true
     // #endif
 }
 
@@ -76,7 +77,6 @@ function _startWithPlugin(plugin) {
     const config   = loadConfig()
     const deviceId = _getDeviceId()
 
-    // 启动前台保活服务，并传入服务器配置（供 App 被杀时兜底上报）
     plugin.startService({
         serverUrl : config.serverUrl || '',
         token     : config.token     || '',
@@ -85,12 +85,11 @@ function _startWithPlugin(plugin) {
         console.log('[SMS] 保活服务启动:', res)
     })
 
-    // 注册短信回调（App 运行时触发）
+    // 原生回调（后台/被杀时有效）
     plugin.onSmsReceived((record) => {
         _handleSms(record)
     })
 
-    isMonitoring = true
     console.log('[SMS] 原生插件监控已启动')
 }
 
@@ -140,8 +139,7 @@ function _startWithPlusAndroid() {
         })
 
         plus.android.runtimeMainActivity().registerReceiver(_receiver, filter)
-        isMonitoring = true
-        console.log('[SMS] plus.android 监控已启动（降级模式）')
+        console.log('[SMS] plus.android 动态接收器已注册')
     } catch (e) {
         console.error('[SMS] 启动失败', e)
     }
@@ -149,10 +147,19 @@ function _startWithPlusAndroid() {
 
 // ─── 公共处理 ────────────────────────────────────────────────────────
 
+// JS 层去重：10秒内相同 sender+body 只处理一次
+const _recentKeys = new Set()
+function _isDuplicate(record) {
+    const key = `${record.sender}:${record.body}:${Math.floor(record.timestamp / 10000)}`
+    if (_recentKeys.has(key)) return true
+    _recentKeys.add(key)
+    if (_recentKeys.size > 50) _recentKeys.clear()
+    return false
+}
+
 function _handleSms(record) {
-    // 通知页面更新
+    if (_isDuplicate(record)) return
     eventBus.emit('sms', record)
-    // 上报服务器
     uploadSms(record)
 }
 
