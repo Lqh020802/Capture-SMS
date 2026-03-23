@@ -157,9 +157,39 @@
                         msg += (ok ? '✅' : '❌') + ' ' + name + '\n'
                     })
                 } catch(e) { msg += '⚠️ 权限检查失败\n' }
-                // 3. 监控状态
-                msg += (this.monitoring ? '✅' : '❌') + ' 监控：' + (this.monitoring ? '运行中' : '已停止')
-                uni.showModal({ title: '诊断结果', content: msg, showCancel: false })
+
+                // 3. 小米/MIUI 检测
+                try {
+                    const Build = plus.android.importClass('android.os.Build')
+                    const manufacturer = Build.MANUFACTURER + ''
+                    const isXiaomi = manufacturer.toLowerCase().includes('xiaomi')
+                    if (isXiaomi) {
+                        msg += '\n⚠️ 检测到小米设备\n'
+                        msg += '请手动开启：\n设置→应用→本应用→权限\n→打开「短信」和「通知类短信」'
+                    }
+                } catch(e) {}
+
+                // 4. 监控状态
+                msg += '\n' + (this.monitoring ? '✅' : '❌') + ' 监控：' + (this.monitoring ? '运行中' : '已停止')
+                uni.showModal({
+                    title: '诊断结果',
+                    content: msg,
+                    confirmText: '去权限设置',
+                    cancelText: '关闭',
+                    success: (res) => {
+                        if (res.confirm) {
+                            // 跳转到 App 权限设置页
+                            // #ifdef APP-PLUS
+                            const Intent  = plus.android.importClass('android.content.Intent')
+                            const Settings = plus.android.importClass('android.provider.Settings')
+                            const Uri     = plus.android.importClass('android.net.Uri')
+                            const intent  = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                            intent.setData(Uri.fromParts('package', plus.runtime.appid, null))
+                            plus.android.runtimeMainActivity().startActivity(intent)
+                            // #endif
+                        }
+                    }
+                })
                 // #endif
             },
 
