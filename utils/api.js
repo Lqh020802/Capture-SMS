@@ -3,12 +3,20 @@ const SERVER_URL = 'http://192.168.30.194:8014/sms/upload'
 const TOKEN      = ''  // 留空 = 不鉴权
 const PENDING_KEY = 'sms_pending'
 
+let _retrying = false  // 防止重试重入
+
 /**
- * 上报短信到服务器
+ * 上报短信到服务器（新短信入口，成功后触发重试队列）
  */
 export function uploadSms(record) {
-    const deviceId = getDeviceId()
+    _request(record, true)
+}
 
+/**
+ * 内部请求，isNew=true 时成功后触发 retryPending
+ */
+function _request(record, isNew) {
+    const deviceId = getDeviceId()
     const data = {
         device_id : deviceId,
         sender    : record.sender,
@@ -17,7 +25,6 @@ export function uploadSms(record) {
         sim_name  : record.sim_name,
         timestamp : record.timestamp
     }
-	console.log(data);
 
     const header = { 'Content-Type': 'application/json' }
     if (TOKEN) header['Authorization'] = 'Bearer ' + TOKEN
@@ -31,10 +38,9 @@ export function uploadSms(record) {
         success(res) {
             if (res.statusCode >= 200 && res.statusCode < 300) {
                 console.log('[API] 上报成功', res.data)
-                retryPending()
+                if (isNew) retryPending()
             } else {
-				console.log(res);
-                console.error('[API] 上报失败', res.statusCode)
+                console.error('[API] 上报失败', res.statusCode, res.data)
                 savePending(record)
             }
         },
@@ -55,13 +61,16 @@ export function saveConfig() {}  // 硬编码模式下无需保存
 // ─── 重试缓存 ────────────────────────────────────────────────
 
 function retryPending() {
+    if (_retrying) return
     const list = getPending()
     if (!list.length) return
+    _retrying = true
+    savePendingList([])  // 先清空，避免重复重试
     let idx = 0
     function next() {
-        if (idx >= list.length) { savePendingList([]); return }
-        uploadSms(list[idx++])
-        setTimeout(next, 500)
+        if (idx >= list.length) { _retrying = false; return }
+        _request(list[idx++], false)
+        setTimeout(next, 1000)
     }
     next()
 }
