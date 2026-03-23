@@ -3,24 +3,14 @@
         {
             "path": "pages/index/index",
             "style": {
-                "navigationBarTitleText": "短信监控",
-                "navigationBarBackgroundColor": "#1a73e8",
-                "navigationBarTextStyle": "white"
-            }
-        },
-        {
-            "path": "pages/setting/setting",
-            "style": {
-                "navigationBarTitleText": "设置",
-                "navigationBarBackgroundColor": "#1a73e8",
-                "navigationBarTextStyle": "white"
+                "navigationStyle": "custom"
             }
         }
     ],
     "globalStyle": {
-        "navigationBarTextStyle": "white",
+        "navigationBarTextStyle": "black",
         "navigationBarTitleText": "短信监控",
-        "navigationBarBackgroundColor": "#1a73e8",
-        "backgroundColor": "#f5f5f5"
+        "navigationBarBackgroundColor": "#ffffff",
+        "backgroundColor": "#f7f8fa"
     }
 }
