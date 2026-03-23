@@ -70,39 +70,47 @@ function _startWithPlugin(plugin) {
 
 let _pollTimer  = null
 let _lastSmsId  = -1
+let _polling    = false  // 防止并发执行
 
 function _startPolling() {
     _lastSmsId = _queryMaxSmsId()
     console.log('[SMS] 开始轮询，初始ID:', _lastSmsId)
-    _pollTimer = setInterval(_pollNewSms, 2000)
+    if (_pollTimer) clearInterval(_pollTimer)  // 防止重复注册
+    _pollTimer = setInterval(_pollNewSms, 5000)  // 5秒一次，降低资源占用
 }
 
 function _stopPolling() {
     if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null }
+    _polling = false
 }
 
 function _queryMaxSmsId() {
+    let cursor = null
     try {
         const Uri      = plus.android.importClass('android.net.Uri')
         const resolver = plus.android.runtimeMainActivity().getContentResolver()
         plus.android.importClass(resolver)
-        const cursor = resolver.query(Uri.parse('content://sms'), null, null, null, '_id DESC')
+        cursor = resolver.query(Uri.parse('content://sms'), null, null, null, '_id DESC')
         if (!cursor) return 0
         plus.android.importClass(cursor)
-        const id = cursor.moveToFirst() ? cursor.getLong(cursor.getColumnIndex('_id')) : 0
-        cursor.close()
-        return id
-    } catch (e) { console.error('[SMS] 查询初始ID失败', e) }
-    return 0
+        return cursor.moveToFirst() ? cursor.getLong(cursor.getColumnIndex('_id')) : 0
+    } catch (e) {
+        console.error('[SMS] 查询初始ID失败', e)
+        return 0
+    } finally {
+        try { if (cursor) cursor.close() } catch (_) {}
+    }
 }
 
 function _pollNewSms() {
+    if (_polling) return  // 上次还没跑完，跳过
+    _polling = true
+    let cursor = null
     try {
         const Uri      = plus.android.importClass('android.net.Uri')
         const resolver = plus.android.runtimeMainActivity().getContentResolver()
         plus.android.importClass(resolver)
-        // 不传 projection，避免 JS 数组转 Java String[] 失败
-        const cursor = resolver.query(
+        cursor = resolver.query(
             Uri.parse('content://sms'),
             null,
             '_id > ' + _lastSmsId,
@@ -128,8 +136,12 @@ function _pollNewSms() {
             console.log('[SMS] 轮询发现新短信 from:', sender)
             _handleSms({ sender, body, sim_slot: slot, sim_name: name, timestamp: date })
         }
-        cursor.close()
-    } catch (e) { console.error('[SMS] 轮询失败', e) }
+    } catch (e) {
+        console.error('[SMS] 轮询失败', e)
+    } finally {
+        try { if (cursor) cursor.close() } catch (_) {}
+        _polling = false
+    }
 }
 
 // ─── 3. 广播接收器（辅助）────────────────────────────────────────────
