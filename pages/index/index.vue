@@ -97,6 +97,14 @@
                 frontColor      : '#000000',
                 backgroundColor : '#ffffff'
             })
+            // 设置 Android 底部系统导航栏为白色
+            // #ifdef APP-PLUS
+            try {
+                const window = plus.android.runtimeMainActivity().getWindow()
+                plus.android.importClass(window)
+                window.setNavigationBarColor(0xFFFFFFFF)
+            } catch (e) {}
+            // #endif
         },
 
         onLoad() {
