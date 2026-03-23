@@ -71,6 +71,9 @@
             </scroll-view>
         </view>
 
+        <!-- 底部安全区 -->
+        <view class="safe-bottom"></view>
+
     </view>
 </template>
 
@@ -355,4 +358,10 @@
 .upload-text { font-size: 22rpx; }
 .text-ok   { color: #66bb6a; }
 .text-fail { color: #ef5350; }
+
+.safe-bottom {
+    background: #ffffff;
+    padding-bottom: env(safe-area-inset-bottom);
+    height: env(safe-area-inset-bottom);
+}
 </style>
