@@ -53,8 +53,8 @@ class SmsReceiver : BroadcastReceiver() {
 
         // 2. 同时直接上报服务器（App 被杀时作为兜底）
         // 兜底直传（App 被杀时生效），优先用 SmsEventEmitter 中由 JS 写入的配置
-        val url   = SmsEventEmitter.serverUrl.ifEmpty { "http://192.168.30.59:3000/api/sms" }
-        val token = SmsEventEmitter.serverToken.ifEmpty { "your-secret-token" }
+        val url   = SmsEventEmitter.serverUrl.ifEmpty { "http://192.168.30.194:8014/sms/upload" }
+        val token = SmsEventEmitter.serverToken.ifEmpty { "" }
         val did   = SmsEventEmitter.deviceId
         uploadDirect(url, token, did, record)
 

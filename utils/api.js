@@ -1,5 +1,5 @@
 // ─── 服务器配置（直接硬编码）────────────────────────────────
-const SERVER_URL = 'http://192.168.30.59:3000/api/sms'
+const SERVER_URL = 'http://192.168.30.194:8014/sms/upload'
 const TOKEN      = ''  // 留空 = 不鉴权
 const PENDING_KEY = 'sms_pending'
 
