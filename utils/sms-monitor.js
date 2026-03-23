@@ -11,6 +11,17 @@ const eventBus = {
 
 export { eventBus }
 
+// 供外部测试调用
+export function simulateSms() {
+    _handleSms({
+        sender    : '10086',
+        body      : '【模拟】验证码 888888，5分钟内有效。',
+        sim_slot  : 0,
+        sim_name  : 'SIM1',
+        timestamp : Date.now()
+    })
+}
+
 // #ifdef APP-PLUS
 let keepalivePlugin = null
 

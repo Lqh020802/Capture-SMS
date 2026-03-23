@@ -39,6 +39,9 @@
                 <view class="btn-diag" @click="runDiag">
                     <text class="btn-diag-text">诊断</text>
                 </view>
+                <view class="btn-diag" @click="testSms">
+                    <text class="btn-diag-text">模拟</text>
+                </view>
             </view>
         </view>
 
@@ -81,7 +84,7 @@
 </template>
 
 <script>
-    import { startSmsMonitor, stopSmsMonitor, getMonitorStatus, eventBus } from '@/utils/sms-monitor.js'
+    import { startSmsMonitor, stopSmsMonitor, getMonitorStatus, eventBus, simulateSms } from '@/utils/sms-monitor.js'
 
     export default {
         data() {
@@ -158,6 +161,11 @@
                 msg += (this.monitoring ? '✅' : '❌') + ' 监控：' + (this.monitoring ? '运行中' : '已停止')
                 uni.showModal({ title: '诊断结果', content: msg, showCancel: false })
                 // #endif
+            },
+
+            testSms() {
+                simulateSms()
+                uni.showToast({ title: '已模拟发送', icon: 'none' })
             },
 
             clearLogs() {
