@@ -86,14 +86,12 @@ function _queryMaxSmsId() {
         const Uri      = plus.android.importClass('android.net.Uri')
         const resolver = plus.android.runtimeMainActivity().getContentResolver()
         plus.android.importClass(resolver)
-        const cursor = resolver.query(Uri.parse('content://sms'), ['_id'], null, null, '_id DESC')
+        const cursor = resolver.query(Uri.parse('content://sms'), null, null, null, '_id DESC')
+        if (!cursor) return 0
         plus.android.importClass(cursor)
-        if (cursor && cursor.moveToFirst()) {
-            const id = cursor.getLong(cursor.getColumnIndex('_id'))
-            cursor.close()
-            return id
-        }
-        if (cursor) cursor.close()
+        const id = cursor.moveToFirst() ? cursor.getLong(cursor.getColumnIndex('_id')) : 0
+        cursor.close()
+        return id
     } catch (e) { console.error('[SMS] 查询初始ID失败', e) }
     return 0
 }
@@ -103,21 +101,22 @@ function _pollNewSms() {
         const Uri      = plus.android.importClass('android.net.Uri')
         const resolver = plus.android.runtimeMainActivity().getContentResolver()
         plus.android.importClass(resolver)
+        // 不传 projection，避免 JS 数组转 Java String[] 失败
         const cursor = resolver.query(
             Uri.parse('content://sms'),
-            ['_id', 'type', 'address', 'body', 'date', 'subscription_id'],
+            null,
             '_id > ' + _lastSmsId,
             null,
             '_id ASC'
         )
-        plus.android.importClass(cursor)
         if (!cursor) return
+        plus.android.importClass(cursor)
 
         while (cursor.moveToNext()) {
             const id   = cursor.getLong(cursor.getColumnIndex('_id'))
             const type = cursor.getInt(cursor.getColumnIndex('type'))
             if (id > _lastSmsId) _lastSmsId = id
-            if (type !== 1) continue  // type=1 为收件箱，过滤发件/草稿
+            if (type !== 1) continue  // type=1 收件箱
 
             const sender = cursor.getString(cursor.getColumnIndex('address')) || ''
             const body   = cursor.getString(cursor.getColumnIndex('body'))   || ''
