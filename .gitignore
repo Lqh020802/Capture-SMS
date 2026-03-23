@@ -9,3 +9,5 @@ local.properties
 android-plugin/keepalive/libs/*.aar
 android-plugin/keepalive/libs/*.jar
 .claude/
+.hbuilderx/
+unpackage/
