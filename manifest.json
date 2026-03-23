@@ -1,24 +1,24 @@
 {
-    "name": "Capture-SMS",
-    "appid": "__UNI__CAPTURESMS",
-    "description": "双卡短信监控转发",
-    "versionName": "1.0.0",
-    "versionCode": "1",
-    "transformPx": false,
-    "app-plus": {
-        "usingComponents": true,
-        "nvueStyleCompiler": "uni-compiler",
-        "compilerVersion": 3,
-        "splashscreen": {
-            "alwaysShowBeforeRender": true,
-            "waiting": true,
-            "autoclose": true,
-            "delay": 0
+    "name" : "Capture-SMS",
+    "appid" : "__UNI__F8F2384",
+    "description" : "双卡短信监控转发",
+    "versionName" : "1.0.0",
+    "versionCode" : "1",
+    "transformPx" : false,
+    "app-plus" : {
+        "usingComponents" : true,
+        "nvueStyleCompiler" : "uni-compiler",
+        "compilerVersion" : 3,
+        "splashscreen" : {
+            "alwaysShowBeforeRender" : true,
+            "waiting" : true,
+            "autoclose" : true,
+            "delay" : 0
         },
-        "modules": {},
-        "distribute": {
-            "android": {
-                "permissions": [
+        "modules" : {},
+        "distribute" : {
+            "android" : {
+                "permissions" : [
                     "<uses-permission android:name=\"android.permission.RECEIVE_SMS\"/>",
                     "<uses-permission android:name=\"android.permission.READ_SMS\"/>",
                     "<uses-permission android:name=\"android.permission.INTERNET\"/>",
@@ -29,23 +29,42 @@
                     "<uses-permission android:name=\"android.permission.CHANGE_NETWORK_STATE\"/>",
                     "<uses-permission android:name=\"android.permission.ACCESS_NETWORK_STATE\"/>"
                 ],
-                "minSdkVersion": 21,
-                "targetSdkVersion": 30,
-                "abiFilters": ["armeabi-v7a", "arm64-v8a"]
+                "minSdkVersion" : 21,
+                "targetSdkVersion" : 30,
+                "abiFilters" : [ "armeabi-v7a", "arm64-v8a" ]
             },
-            "syncDebug": true
+            "syncDebug" : true,
+            "ios" : {
+                "dSYMs" : false
+            }
+        },
+        "nativePlugins" : {
+            "Capture-Keepalive" : {
+                "__plugin_info__" : {
+                    "name" : "Capture-Keepalive",
+                    "description" : "短信监控后台保活插件，支持双卡",
+                    "platforms" : "Android",
+                    "url" : "",
+                    "android_package_name" : "",
+                    "ios_bundle_id" : "",
+                    "isCloud" : false,
+                    "bought" : -1,
+                    "pid" : "",
+                    "parameters" : {}
+                }
+            }
         }
     },
-    "quickapp": {},
-    "mp-weixin": {
-        "appid": "",
-        "setting": {
-            "urlCheck": false
+    "quickapp" : {},
+    "mp-weixin" : {
+        "appid" : "",
+        "setting" : {
+            "urlCheck" : false
         },
-        "usingComponents": true
+        "usingComponents" : true
     },
-    "uniStatistics": {
-        "enable": false
+    "uniStatistics" : {
+        "enable" : false
     },
-    "vueVersion": "2"
+    "vueVersion" : "2"
 }

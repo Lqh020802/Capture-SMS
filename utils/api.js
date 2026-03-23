@@ -1,6 +1,6 @@
 // ─── 服务器配置（直接硬编码）────────────────────────────────
 const SERVER_URL = 'http://192.168.30.59:3000/api/sms'
-const TOKEN      = 'your-secret-token'
+const TOKEN      = ''  // 留空 = 不鉴权
 const PENDING_KEY = 'sms_pending'
 
 /**
@@ -17,6 +17,7 @@ export function uploadSms(record) {
         sim_name  : record.sim_name,
         timestamp : record.timestamp
     }
+	console.log(data);
 
     const header = { 'Content-Type': 'application/json' }
     if (TOKEN) header['Authorization'] = 'Bearer ' + TOKEN
@@ -32,6 +33,7 @@ export function uploadSms(record) {
                 console.log('[API] 上报成功', res.data)
                 retryPending()
             } else {
+				console.log(res);
                 console.error('[API] 上报失败', res.statusCode)
                 savePending(record)
             }
