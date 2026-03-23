@@ -92,6 +92,13 @@
             }
         },
 
+        onReady() {
+            uni.setNavigationBarColor({
+                frontColor      : '#000000',
+                backgroundColor : '#ffffff'
+            })
+        },
+
         onLoad() {
             this.statusBarHeight = uni.getSystemInfoSync().statusBarHeight
             this.monitoring = getMonitorStatus()
