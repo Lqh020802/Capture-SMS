@@ -36,6 +36,9 @@
                 <view class="btn-main" :class="monitoring ? 'btn-stop' : 'btn-start'" @click="toggleMonitor">
                     <text class="btn-main-text">{{ monitoring ? '停止监控' : '启动监控' }}</text>
                 </view>
+                <view class="btn-diag" @click="runDiag">
+                    <text class="btn-diag-text">诊断</text>
+                </view>
             </view>
         </view>
 
@@ -122,8 +125,7 @@
         },
 
         methods: {
-            toggleMonitor() {
-                if (this.monitoring) {
+            toggleMonitor() {                if (this.monitoring) {
                     stopSmsMonitor()
                     this.monitoring = false
                     uni.showToast({ title: '监控已停止', icon: 'none' })
@@ -132,6 +134,30 @@
                     this.monitoring = true
                     uni.showToast({ title: '监控已启动', icon: 'success' })
                 }
+            },
+
+            runDiag() {
+                // #ifdef APP-PLUS
+                let msg = ''
+                // 1. 插件
+                try {
+                    const p = uni.requireNativePlugin('Capture-Keepalive')
+                    msg += (p ? '✅' : '❌') + ' 原生插件：' + (p ? '已加载' : '返回空') + '\n'
+                } catch(e) { msg += '❌ 原生插件加载失败\n' }
+                // 2. 权限
+                try {
+                    const ctx = plus.android.runtimeMainActivity()
+                    plus.android.importClass(ctx)
+                    ;['RECEIVE_SMS','READ_SMS','READ_PHONE_STATE'].forEach(name => {
+                        const full = 'android.permission.' + name
+                        const ok = ctx.checkSelfPermission(full) === 0
+                        msg += (ok ? '✅' : '❌') + ' ' + name + '\n'
+                    })
+                } catch(e) { msg += '⚠️ 权限检查失败\n' }
+                // 3. 监控状态
+                msg += (this.monitoring ? '✅' : '❌') + ' 监控：' + (this.monitoring ? '运行中' : '已停止')
+                uni.showModal({ title: '诊断结果', content: msg, showCancel: false })
+                // #endif
             },
 
             clearLogs() {
@@ -257,7 +283,7 @@
 }
 
 /* 控制按钮 */
-.ctrl-row { display: flex; }
+.ctrl-row { display: flex; gap: 16rpx; }
 .btn-main {
     flex: 1;
     height: 96rpx;
@@ -266,6 +292,16 @@
     align-items: center;
     justify-content: center;
 }
+.btn-diag {
+    width: 120rpx;
+    height: 96rpx;
+    border-radius: 16rpx;
+    background: #f5f5f5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.btn-diag-text { font-size: 26rpx; color: #888; }
 .btn-start { background: #111; }
 .btn-stop  { background: #fff; border: 2rpx solid #e0e0e0; }
 
