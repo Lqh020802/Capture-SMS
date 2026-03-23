@@ -3,6 +3,8 @@
 
         <!-- 顶部状态区 -->
         <view class="header">
+            <!-- 状态栏占位 -->
+            <view :style="{ height: statusBarHeight + 'px' }"></view>
             <view class="header-top">
                 <text class="app-title">短信监控</text>
                 <view class="status-pill" :class="monitoring ? 'pill-on' : 'pill-off'">
@@ -78,15 +80,17 @@
     export default {
         data() {
             return {
-                monitoring : false,
-                logs       : [],
-                totalCount : 0,
-                todayCount : 0,
-                failCount  : 0
+                monitoring      : false,
+                logs            : [],
+                totalCount      : 0,
+                todayCount      : 0,
+                failCount       : 0,
+                statusBarHeight : 0
             }
         },
 
         onLoad() {
+            this.statusBarHeight = uni.getSystemInfoSync().statusBarHeight
             this.monitoring = getMonitorStatus()
             this._loadStats()
 
