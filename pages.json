@@ -5,6 +5,12 @@
             "style": {
                 "navigationStyle": "custom"
             }
+        },
+        {
+            "path": "pages/setting/setting",
+            "style": {
+                "navigationBarTitleText": "设置"
+            }
         }
     ],
     "globalStyle": {

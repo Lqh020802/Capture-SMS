@@ -1,6 +1,6 @@
-// ─── 服务器配置（直接硬编码）────────────────────────────────
-const SERVER_URL = 'http://192.168.30.194:8014/sms/upload'
-const TOKEN      = ''  // 留空 = 不鉴权
+// ─── 服务器配置 ────────────────────────────────────────────
+const DEFAULT_SERVER_URL = 'http://192.168.30.70:8014/sms/upload'
+const CONFIG_KEY = 'sms_config'
 const PENDING_KEY = 'sms_pending'
 
 let _retrying = false  // 防止重试重入
@@ -16,22 +16,23 @@ export function uploadSms(record) {
  * 内部请求，isNew=true 时成功后触发 retryPending
  */
 function _request(record, isNew) {
+    const config = loadConfig()
     const deviceId = getDeviceId()
     const data = {
-        device_id : deviceId,
-        sender    : record.sender,
-        body      : record.body,
-        sim_slot  : record.sim_slot,
-        sim_name  : record.sim_name,
-        timestamp : record.timestamp
+        device_id: deviceId,
+        sender: record.sender,
+        body: record.body,
+        sim_slot: record.sim_slot,
+        sim_name: record.sim_name,
+        timestamp: record.timestamp
     }
 
     const header = { 'Content-Type': 'application/json' }
-    if (TOKEN) header['Authorization'] = 'Bearer ' + TOKEN
+    if (config.token) header['Authorization'] = 'Bearer ' + config.token
 
     uni.request({
-        url    : SERVER_URL,
-        method : 'POST',
+        url: config.serverUrl,
+        method: 'POST',
         data,
         header,
         timeout: 10000,
@@ -51,12 +52,36 @@ function _request(record, isNew) {
     })
 }
 
-// ─── 保留给 SmsReceiver.kt 兜底上报使用 ─────────────────────
+// ─── 配置读写 ────────────────────────────────────────────────
+
 export function loadConfig() {
-    return { serverUrl: SERVER_URL, token: TOKEN }
+    try {
+        const raw = uni.getStorageSync(CONFIG_KEY)
+        const config = raw ? JSON.parse(raw) : {}
+        return {
+            serverUrl: config.serverUrl || DEFAULT_SERVER_URL,
+            token: config.token || ''
+        }
+    } catch {
+        return {
+            serverUrl: DEFAULT_SERVER_URL,
+            token: ''
+        }
+    }
 }
 
-export function saveConfig() {}  // 硬编码模式下无需保存
+export function saveConfig(config = {}) {
+    const nextConfig = {
+        serverUrl: (config.serverUrl || '').trim() || DEFAULT_SERVER_URL,
+        token: (config.token || '').trim()
+    }
+    uni.setStorageSync(CONFIG_KEY, JSON.stringify(nextConfig))
+    return nextConfig
+}
+
+export function retryPendingNow() {
+    retryPending()
+}
 
 // ─── 重试缓存 ────────────────────────────────────────────────
 

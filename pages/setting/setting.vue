@@ -1,257 +1,483 @@
 <template>
-    <view class="container">
+<view class="page">
 
-        <view class="section">
-            <text class="section-title">服务器配置</text>
+    <!-- 主内容区 -->
+    <view class="content">
 
-            <view class="form-item">
-                <text class="label">接收地址 (URL)</text>
-                <input
-                    class="input"
-                    v-model="form.serverUrl"
-                    placeholder="https://your-server.com/api/sms"
-                    placeholder-style="color:#bbb"
-                />
+        <!-- 服务器配置 -->
+        <view class="card">
+            <view class="card-header">
+                <view class="card-icon card-icon-network">
+                    <view class="icon-network-ring"></view>
+                    <view class="icon-network-dot"></view>
+                </view>
+                <text class="card-title">服务器配置</text>
             </view>
 
-            <view class="form-item">
-                <text class="label">鉴权 Token（可选）</text>
-                <input
-                    class="input"
-                    v-model="form.token"
-                    placeholder="Bearer token，留空则不鉴权"
-                    placeholder-style="color:#bbb"
-                />
+            <view class="field">
+                <text class="field-label">接收地址</text>
+                <input class="field-input" v-model="form.serverUrl" placeholder="http://192.168.30.70:8014/sms/upload"
+                    placeholder-class="field-placeholder" />
+            </view>
+
+            <view class="field">
+                <text class="field-label">鉴权令牌</text>
+                <input class="field-input" v-model="form.token" placeholder="可选，留空则不鉴权"
+                    placeholder-class="field-placeholder" />
             </view>
         </view>
 
-        <view class="section">
-            <text class="section-title">测试</text>
-            <button class="btn-test" @click="testConnection" :loading="testing">
-                发送测试请求
+        <!-- 连接测试 -->
+        <view class="card">
+            <view class="card-header">
+                <view class="card-icon card-icon-flash">
+                    <view class="icon-flash-main"></view>
+                </view>
+                <text class="card-title">连接测试</text>
+            </view>
+
+            <button class="btn-primary" :class="{ 'btn-loading': testing }" @click="testConnection" :disabled="testing">
+                <text class="btn-text">{{ testing ? '测试中...' : '发送测试请求' }}</text>
             </button>
-            <text class="test-result" :class="testOk ? 'ok' : 'fail'" v-if="testMsg">
-                {{ testMsg }}
-            </text>
-        </view>
 
-        <view class="section">
-            <text class="section-title">数据</text>
-            <view class="form-item row">
-                <text class="label">待重传条数</text>
-                <text class="value-text">{{ pendingCount }} 条</text>
+            <view v-if="testMsg" class="test-feedback" :class="testOk ? 'feedback-success' : 'feedback-error'">
+                <text class="feedback-icon">{{ testOk ? '✓' : '✗' }}</text>
+                <text class="feedback-text">{{ testMsg }}</text>
             </view>
-            <button class="btn-retry" @click="retryPending">立即重传</button>
-            <button class="btn-clear-pending" @click="clearPending">清空缓存</button>
         </view>
 
-        <button class="btn-save" @click="save">保存配置</button>
+        <!-- 数据管理 -->
+        <view class="card">
+            <view class="card-header">
+                <view class="card-icon card-icon-stack">
+                    <view class="icon-stack-top"></view>
+                    <view class="icon-stack-bottom"></view>
+                </view>
+                <text class="card-title">数据管理</text>
+            </view>
+
+            <view class="stat-row">
+                <text class="stat-label">待重传条数</text>
+                <text class="stat-value">{{ pendingCount }}</text>
+            </view>
+
+            <view class="btn-group">
+                <button class="btn-secondary" @click="retryPending">
+                    <text class="btn-text">立即重传</text>
+                </button>
+                <button class="btn-ghost" @click="clearPending">
+                    <text class="btn-text">清空缓存</text>
+                </button>
+            </view>
+        </view>
 
     </view>
+
+    <!-- 底部保存按钮 -->
+    <view class="footer">
+        <button class="btn-save" @click="save">
+            <text class="btn-save-text">保存配置</text>
+        </button>
+    </view>
+
+</view>
 </template>
 
 <script>
-    import { saveConfig, loadConfig } from '@/utils/api.js'
+import { saveConfig, loadConfig, retryPendingNow } from '@/utils/api.js'
 
-    export default {
-        data() {
-            return {
-                form: {
-                    serverUrl : '',
-                    token     : ''
+export default {
+    data() {
+        return {
+            form: {
+                serverUrl: '',
+                token: ''
+            },
+            testing: false,
+            testMsg: '',
+            testOk: false,
+            pendingCount: 0
+        }
+    },
+
+    onLoad() {
+        const cfg = loadConfig()
+        this.form.serverUrl = cfg.serverUrl
+        this.form.token = cfg.token
+        this._loadPendingCount()
+    },
+
+    methods: {
+        save() {
+            const url = (this.form.serverUrl || '').trim()
+            if (!url) {
+                uni.showToast({ title: '请填写服务器地址', icon: 'none' })
+                return
+            }
+            saveConfig(this.form)
+            uni.showToast({ title: '保存成功', icon: 'success' })
+        },
+
+        testConnection() {
+            if (!this.form.serverUrl) {
+                uni.showToast({ title: '请先填写服务器地址', icon: 'none' })
+                return
+            }
+            this.testing = true
+            this.testMsg = ''
+
+            const header = { 'Content-Type': 'application/json' }
+            if (this.form.token) header['Authorization'] = 'Bearer ' + this.form.token
+
+            uni.request({
+                url: this.form.serverUrl,
+                method: 'POST',
+                header,
+                data: {
+                    device_id: 'test',
+                    sender: '10086',
+                    body: '【测试】这是一条测试短信',
+                    sim_slot: 0,
+                    sim_name: 'SIM1',
+                    timestamp: Date.now()
                 },
-                testing      : false,
-                testMsg      : '',
-                testOk       : false,
-                pendingCount : 0
-            }
+                timeout: 8000,
+                success: (res) => {
+                    this.testing = false
+                    if (res.statusCode >= 200 && res.statusCode < 300) {
+                        this.testOk = true
+                        this.testMsg = '✓ 连接成功，服务器响应正常'
+                    } else {
+                        this.testOk = false
+                        this.testMsg = `✗ 服务器返回 ${res.statusCode}`
+                    }
+                },
+                fail: (err) => {
+                    this.testing = false
+                    this.testOk = false
+                    this.testMsg = '✗ 连接失败：' + (err.errMsg || '网络错误')
+                }
+            })
         },
 
-        onLoad() {
-            const cfg = loadConfig()
-            this.form.serverUrl = cfg.serverUrl || ''
-            this.form.token     = cfg.token     || ''
-            this._loadPendingCount()
+        retryPending() {
+            const pending = this._getPending()
+            if (!pending.length) {
+                uni.showToast({ title: '没有待重传记录', icon: 'none' })
+                return
+            }
+            retryPendingNow()
+            uni.showToast({ title: `开始重传 ${pending.length} 条`, icon: 'none' })
+            setTimeout(() => {
+                this._loadPendingCount()
+            }, 2000)
         },
 
-        methods: {
-            save() {
-                if (!this.form.serverUrl) {
-                    uni.showToast({ title: '请填写服务器地址', icon: 'none' })
-                    return
-                }
-                saveConfig(this.form)
-                uni.showToast({ title: '保存成功', icon: 'success' })
-            },
-
-            testConnection() {
-                if (!this.form.serverUrl) {
-                    uni.showToast({ title: '请先填写服务器地址', icon: 'none' })
-                    return
-                }
-                this.testing = true
-                this.testMsg = ''
-
-                const header = { 'Content-Type': 'application/json' }
-                if (this.form.token) header['Authorization'] = 'Bearer ' + this.form.token
-
-                uni.request({
-                    url    : this.form.serverUrl,
-                    method : 'POST',
-                    header,
-                    data   : {
-                        device_id : 'test',
-                        sender    : '10086',
-                        body      : '【测试】这是一条测试短信',
-                        sim_slot  : 0,
-                        sim_name  : 'SIM1',
-                        timestamp : Date.now()
-                    },
-                    timeout: 8000,
-                    success : (res) => {
-                        this.testing = false
-                        if (res.statusCode >= 200 && res.statusCode < 300) {
-                            this.testOk  = true
-                            this.testMsg = '✓ 连接成功，服务器响应正常'
-                        } else {
-                            this.testOk  = false
-                            this.testMsg = `✗ 服务器返回 ${res.statusCode}`
-                        }
-                    },
-                    fail : (err) => {
-                        this.testing = false
-                        this.testOk  = false
-                        this.testMsg = '✗ 连接失败：' + (err.errMsg || '网络错误')
+        clearPending() {
+            uni.showModal({
+                title: '确认清空',
+                content: '将清除所有待重传的短信缓存',
+                success: (res) => {
+                    if (res.confirm) {
+                        uni.setStorageSync('sms_pending', '[]')
+                        this.pendingCount = 0
+                        uni.showToast({ title: '已清空', icon: 'success' })
                     }
-                })
-            },
-
-            retryPending() {
-                // 触发 api.js 中的重试逻辑
-                const pending = this._getPending()
-                if (!pending.length) {
-                    uni.showToast({ title: '没有待重传记录', icon: 'none' })
-                    return
                 }
-                // 简单重传：清空后逐条上报
-                uni.showToast({ title: `开始重传 ${pending.length} 条`, icon: 'none' })
-            },
+            })
+        },
 
-            clearPending() {
-                uni.showModal({
-                    title: '确认清空',
-                    content: '将清除所有待重传的短信缓存',
-                    success: (res) => {
-                        if (res.confirm) {
-                            uni.setStorageSync('sms_pending', '[]')
-                            this.pendingCount = 0
-                            uni.showToast({ title: '已清空', icon: 'success' })
-                        }
-                    }
-                })
-            },
+        _loadPendingCount() {
+            this.pendingCount = this._getPending().length
+        },
 
-            _loadPendingCount() {
-                this.pendingCount = this._getPending().length
-            },
-
-            _getPending() {
-                try {
-                    const str = uni.getStorageSync('sms_pending')
-                    return str ? JSON.parse(str) : []
-                } catch { return [] }
-            }
+        _getPending() {
+            try {
+                const str = uni.getStorageSync('sms_pending')
+                return str ? JSON.parse(str) : []
+            } catch { return [] }
         }
     }
+}
 </script>
 
 <style scoped>
-.container {
-    padding: 20rpx;
-    background: #f5f5f5;
+.page {
     min-height: 100vh;
+    background: #f6f7f9;
 }
 
-.section {
-    background: #fff;
-    border-radius: 16rpx;
-    padding: 28rpx;
-    margin-bottom: 20rpx;
+.content {
+    padding: 24rpx;
 }
 
-.section-title {
-    font-size: 26rpx;
-    color: #999;
+.card {
+    background: #ffffff;
+    border: 1rpx solid #eceef2;
+    border-radius: 28rpx;
+    padding: 30rpx;
     margin-bottom: 20rpx;
-    display: block;
+    box-shadow: 0 12rpx 40rpx rgba(15, 23, 42, 0.04);
 }
 
-.form-item {
-    margin-bottom: 20rpx;
-}
-.form-item.row {
+.card-header {
     display: flex;
-    justify-content: space-between;
     align-items: center;
+    gap: 12rpx;
+    margin-bottom: 28rpx;
 }
 
-.label {
-    font-size: 28rpx;
-    color: #333;
-    margin-bottom: 10rpx;
+.card-icon {
+    position: relative;
+    width: 52rpx;
+    height: 52rpx;
+    border-radius: 16rpx;
+    background: #f7f8fa;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1rpx solid #eceff3;
+}
+
+.card-icon-network,
+.card-icon-flash,
+.card-icon-stack {
+    overflow: hidden;
+}
+
+.icon-network-ring {
+    width: 26rpx;
+    height: 26rpx;
+    border: 3rpx solid #111827;
+    border-radius: 50%;
+    opacity: 0.9;
+}
+
+.icon-network-dot {
+    position: absolute;
+    width: 8rpx;
+    height: 8rpx;
+    border-radius: 50%;
+    background: #111827;
+}
+
+.icon-flash-main {
+    width: 16rpx;
+    height: 24rpx;
+    background: #111827;
+    clip-path: polygon(48% 0, 100% 0, 66% 42%, 100% 42%, 28% 100%, 44% 58%, 8% 58%);
+}
+
+.icon-stack-top,
+.icon-stack-bottom {
+    position: absolute;
+    width: 22rpx;
+    height: 14rpx;
+    border: 2rpx solid #111827;
+    border-radius: 6rpx;
+    background: rgba(17, 24, 39, 0.04);
+}
+
+.icon-stack-top {
+    transform: translateY(-6rpx);
+}
+
+.icon-stack-bottom {
+    transform: translateY(8rpx);
+}
+
+.card-title {
+    font-size: 30rpx;
+    font-weight: 600;
+    color: #111827;
+    letter-spacing: 1rpx;
+}
+
+.field {
+    margin-bottom: 24rpx;
+}
+
+.field:last-child {
+    margin-bottom: 0;
+}
+
+.field-label {
     display: block;
+    margin-bottom: 14rpx;
+    font-size: 24rpx;
+    color: #6b7280;
+    letter-spacing: 1rpx;
 }
 
-.input {
-    border: 2rpx solid #e0e0e0;
-    border-radius: 10rpx;
-    padding: 16rpx 20rpx;
-    font-size: 28rpx;
-    color: #333;
+.field-input {
     width: 100%;
+    height: 92rpx;
+    padding: 0 24rpx;
     box-sizing: border-box;
-}
-
-.value-text {
+    border-radius: 22rpx;
+    border: 1rpx solid #e6e9ef;
+    background: #fbfbfc;
+    color: #111827;
     font-size: 28rpx;
-    color: #1a73e8;
-    font-weight: bold;
+    transition: all 0.2s ease;
 }
 
-.btn-test {
-    background: #1a73e8;
-    color: #fff;
-    border-radius: 10rpx;
-    font-size: 28rpx;
-    margin-bottom: 16rpx;
-    border: none;
+.field-placeholder {
+    color: #b1b8c3;
 }
 
-.test-result {
+.stat-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24rpx;
+    padding: 24rpx;
+    border-radius: 22rpx;
+    background: #fafbfc;
+    border: 1rpx solid #edf0f3;
+}
+
+.stat-label {
     font-size: 26rpx;
-    display: block;
-    text-align: center;
+    color: #4b5563;
 }
-.ok   { color: #4caf50; }
-.fail { color: #f44336; }
 
-.btn-retry, .btn-clear-pending {
-    border-radius: 10rpx;
-    font-size: 28rpx;
-    margin-top: 12rpx;
+.stat-value {
+    min-width: 84rpx;
+    height: 56rpx;
+    padding: 0 18rpx;
+    border-radius: 999rpx;
+    background: #111827;
+    color: #ffffff;
+    font-size: 26rpx;
+    font-weight: 700;
+    text-align: center;
+    line-height: 56rpx;
+}
+
+.btn-group {
+    display: flex;
+    gap: 16rpx;
+}
+
+.btn-primary,
+.btn-secondary,
+.btn-ghost,
+.btn-save {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    overflow: hidden;
+}
+
+.btn-primary::after,
+.btn-secondary::after,
+.btn-ghost::after,
+.btn-save::after {
     border: none;
 }
-.btn-retry         { background: #ff9800; color: #fff; }
-.btn-clear-pending { background: #f5f5f5; color: #888; margin-top: 12rpx; }
+
+.btn-primary {
+    height: 92rpx;
+    border-radius: 22rpx;
+    background: #111827;
+    box-shadow: 0 16rpx 36rpx rgba(17, 24, 39, 0.12);
+}
+
+.btn-loading {
+    opacity: 0.82;
+}
+
+.btn-secondary,
+.btn-ghost {
+    flex: 1;
+    height: 84rpx;
+    border-radius: 20rpx;
+}
+
+.btn-secondary {
+    background: #111827;
+}
+
+.btn-ghost {
+    background: #f3f4f6;
+}
+
+.btn-text {
+    font-size: 28rpx;
+    font-weight: 600;
+    letter-spacing: 1rpx;
+}
+
+.btn-primary .btn-text,
+.btn-secondary .btn-text,
+.btn-save-text {
+    color: #ffffff;
+}
+
+.btn-ghost .btn-text {
+    color: #4b5563;
+}
+
+.test-feedback {
+    margin-top: 22rpx;
+    padding: 20rpx 22rpx;
+    border-radius: 20rpx;
+    display: flex;
+    align-items: center;
+    gap: 12rpx;
+}
+
+.feedback-success {
+    background: #f3fbf6;
+    border: 1rpx solid #d7f1df;
+}
+
+.feedback-error {
+    background: #fff6f6;
+    border: 1rpx solid #ffe0e0;
+}
+
+.feedback-icon {
+    font-size: 26rpx;
+    font-weight: 700;
+}
+
+.feedback-success .feedback-icon,
+.feedback-success .feedback-text {
+    color: #15803d;
+}
+
+.feedback-error .feedback-icon,
+.feedback-error .feedback-text {
+    color: #dc2626;
+}
+
+.feedback-text {
+    flex: 1;
+    font-size: 25rpx;
+    line-height: 1.5;
+}
+
+.footer {
+    position: sticky;
+    bottom: 0;
+    padding: 12rpx 24rpx calc(24rpx + env(safe-area-inset-bottom));
+    background: linear-gradient(to top, #f6f7f9 72%, rgba(246, 247, 249, 0));
+}
 
 .btn-save {
-    background: #1a73e8;
-    color: #fff;
-    border-radius: 50rpx;
-    font-size: 32rpx;
-    font-weight: bold;
-    padding: 24rpx 0;
-    margin-top: 10rpx;
-    border: none;
+    width: 100%;
+    height: 96rpx;
+    border-radius: 999rpx;
+    background: #111827;
+    box-shadow: 0 18rpx 44rpx rgba(17, 24, 39, 0.16);
+}
+
+.btn-save-text {
+    font-size: 30rpx;
+    font-weight: 700;
+    letter-spacing: 2rpx;
 }
 </style>
