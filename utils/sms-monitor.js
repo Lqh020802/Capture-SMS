@@ -268,6 +268,7 @@ function _getPhoneNumberFromSubId(subId, slotIndex) {
 function _getPhoneNumber(context, subId, slotIndex) {
     try {
         const SubscriptionManager = plus.android.importClass('android.telephony.SubscriptionManager')
+        const TelephonyManager = plus.android.importClass('android.telephony.TelephonyManager')
         const Build = plus.android.importClass('android.os.Build')
         const manager = SubscriptionManager.from(context)
         plus.android.importClass(manager)
@@ -287,6 +288,16 @@ function _getPhoneNumber(context, subId, slotIndex) {
             const number = info.getNumber()
             if (number) return number + ''
         }
+
+        const telephony = context.getSystemService('phone')
+        plus.android.importClass(telephony)
+        let telephonyForSim = telephony
+        if (subId !== -1 && TelephonyManager && telephony.createForSubscriptionId) {
+            telephonyForSim = telephony.createForSubscriptionId(subId)
+            plus.android.importClass(telephonyForSim)
+        }
+        const line1 = telephonyForSim.getLine1Number()
+        if (line1) return line1 + ''
     } catch {}
     return ''
 }

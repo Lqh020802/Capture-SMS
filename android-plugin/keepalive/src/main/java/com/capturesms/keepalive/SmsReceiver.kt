@@ -90,7 +90,7 @@ class SmsReceiver : BroadcastReceiver() {
                 SubscriptionManager.from(context)
             } else return ""
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && subId != -1) {
+            val number = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && subId != -1) {
                 manager.getPhoneNumber(subId).orEmpty().ifEmpty {
                     manager.getActiveSubscriptionInfo(subId)?.number.orEmpty()
                 }
@@ -100,6 +100,12 @@ class SmsReceiver : BroadcastReceiver() {
                                ?.firstOrNull { it.simSlotIndex == slotIndex }
                 info?.number?.orEmpty() ?: ""
             }
+            if (number.isNotEmpty()) return number
+
+            val telephony = context.getSystemService(Context.TELEPHONY_SERVICE) as? android.telephony.TelephonyManager
+                ?: return ""
+            val telephonyForSub = if (subId != -1) telephony.createForSubscriptionId(subId) else telephony
+            telephonyForSub.line1Number.orEmpty()
         } catch (_: Exception) {
             ""
         }

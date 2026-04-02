@@ -2,6 +2,7 @@ package com.capturesms.keepalive
 
 import android.app.*
 import android.content.Intent
+import android.content.Context
 import android.database.ContentObserver
 import android.net.Uri
 import android.os.Build
@@ -169,13 +170,19 @@ class KeepaliveService : Service() {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP_MR1) return ""
 
             val manager = android.telephony.SubscriptionManager.from(this)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && subId != -1) {
+            val number = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && subId != -1) {
                 manager.getPhoneNumber(subId).orEmpty().ifEmpty {
                     manager.getActiveSubscriptionInfo(subId)?.number.orEmpty()
                 }
             } else {
                 manager.getActiveSubscriptionInfo(subId)?.number.orEmpty()
             }
+            if (number.isNotEmpty()) return number
+
+            val telephony = getSystemService(Context.TELEPHONY_SERVICE) as? android.telephony.TelephonyManager
+                ?: return ""
+            val telephonyForSub = if (subId != -1) telephony.createForSubscriptionId(subId) else telephony
+            telephonyForSub.line1Number.orEmpty()
         } catch (e: Exception) {
             ""
         }
