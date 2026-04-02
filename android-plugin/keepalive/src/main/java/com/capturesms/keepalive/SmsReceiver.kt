@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.Build
 import android.telephony.SmsMessage
 import android.telephony.SubscriptionManager
+import android.util.Log
 
 /**
  * 静态短信广播接收器
@@ -94,23 +95,30 @@ class SmsReceiver : BroadcastReceiver() {
             } else return ""
 
             val number = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && subId != -1) {
-                manager.getPhoneNumber(subId).orEmpty().ifEmpty {
-                    manager.getActiveSubscriptionInfo(subId)?.number.orEmpty()
+                normalizePhoneNumber(manager.getPhoneNumber(subId)).ifEmpty {
+                    normalizePhoneNumber(manager.getActiveSubscriptionInfo(subId)?.number)
                 }
             } else {
                 val info = if (subId != -1) manager.getActiveSubscriptionInfo(subId)
                            else manager.activeSubscriptionInfoList
                                ?.firstOrNull { it.simSlotIndex == slotIndex }
-                info?.number?.orEmpty() ?: ""
+                normalizePhoneNumber(info?.number)
             }
             if (number.isNotEmpty()) return number
 
             val telephony = context.getSystemService(Context.TELEPHONY_SERVICE) as? android.telephony.TelephonyManager
                 ?: return ""
             val telephonyForSub = if (subId != -1) telephony.createForSubscriptionId(subId) else telephony
-            telephonyForSub.line1Number.orEmpty()
+            val operatorName = telephonyForSub.simOperatorName.orEmpty()
+            val line1Number = normalizePhoneNumber(telephonyForSub.line1Number)
+            Log.d("CaptureSMS", "operator=$operatorName phone=$line1Number")
+            line1Number
         } catch (_: Exception) {
             ""
         }
+    }
+
+    private fun normalizePhoneNumber(phoneNumber: String?): String {
+        return phoneNumber.orEmpty().removePrefix("+86").trim()
     }
 }

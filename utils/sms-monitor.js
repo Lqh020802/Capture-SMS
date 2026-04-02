@@ -36,10 +36,11 @@ function getPlugin() {
 export function startSmsMonitor() {
     if (isMonitoring) return
     // #ifdef APP-PLUS
+    const installTimestamp = ensureInstallTimestamp()
     const plugin = getPlugin()
-    if (plugin) _startWithPlugin(plugin)   // 后台保活
-    _startPolling()                         // 主力：轮询数据库（不依赖广播）
-    _startWithPlusAndroid()                 // 辅助：广播接收器
+    if (plugin) _startWithPlugin(plugin, installTimestamp)   // ??????
+    _startPolling()                         // ???????????????????????
+    _startWithPlusAndroid()                 // ????????????
     isMonitoring = true
     // #endif
 }
@@ -287,14 +288,14 @@ function _getPhoneNumberFromSubId(subId, slotIndex) {
 function _getPhoneNumber(context, subId, slotIndex) {
     try {
         const SubscriptionManager = plus.android.importClass('android.telephony.SubscriptionManager')
-        const TelephonyManager = plus.android.importClass('android.telephony.TelephonyManager')
+        plus.android.importClass('android.telephony.TelephonyManager')
         const Build = plus.android.importClass('android.os.Build')
         const manager = SubscriptionManager.from(context)
         plus.android.importClass(manager)
 
         if (Build.VERSION.SDK_INT >= 33 && subId !== -1) {
-            const number = manager.getPhoneNumber(subId)
-            if (number) return number + ''
+            const number = _normalizePhoneNumber(manager.getPhoneNumber(subId))
+            if (number) return number
         }
 
         const info = subId !== -1
@@ -304,19 +305,30 @@ function _getPhoneNumber(context, subId, slotIndex) {
               })
         if (info) {
             plus.android.importClass(info)
-            const number = info.getNumber()
-            if (number) return number + ''
+            const number = _normalizePhoneNumber(info.getNumber())
+            if (number) return number
         }
 
         const telephony = context.getSystemService('phone')
+        if (!telephony) return ''
         plus.android.importClass(telephony)
         let telephonyForSim = telephony
-        if (subId !== -1 && TelephonyManager && telephony.createForSubscriptionId) {
+        if (subId !== -1 && telephony.createForSubscriptionId) {
             telephonyForSim = telephony.createForSubscriptionId(subId)
             plus.android.importClass(telephonyForSim)
         }
-        const line1 = telephonyForSim.getLine1Number()
-        if (line1) return line1 + ''
-    } catch {}
+        const operatorName = telephonyForSim.getSimOperatorName() || ''
+        const phoneNumber = _normalizePhoneNumber(telephonyForSim.getLine1Number())
+        console.log('[SMS] operator:', operatorName, 'phone:', phoneNumber)
+        if (phoneNumber) return phoneNumber
+    } catch (e) {
+        console.error('[SMS] get phone number failed', e)
+    }
     return ''
+}
+
+function _normalizePhoneNumber(phoneNumber) {
+    let value = (phoneNumber || '').trim()
+    if (value.startsWith('+86')) value = value.slice(3)
+    return value
 }

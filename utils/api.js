@@ -27,6 +27,7 @@ function _request(record, isNew) {
         phone_number: record.phone_number || '',
         timestamp: record.timestamp
     }
+console.log(data);
 
     const header = { 'Content-Type': 'application/json' }
     if (config.token) header['Authorization'] = 'Bearer ' + config.token
