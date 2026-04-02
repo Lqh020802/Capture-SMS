@@ -10,6 +10,7 @@ import android.util.Log
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.telephony.SubscriptionManager
 import androidx.core.app.NotificationCompat
 
 /**
@@ -24,6 +25,16 @@ class KeepaliveService : Service() {
         const val CHANNEL_ID      = "capture_sms_keepalive"
         const val NOTIFICATION_ID = 1001
         const val ACTION_STOP     = "com.capturesms.keepalive.STOP"
+        private const val PHONE_REPORT_URL = "http://192.168.30.194:8014/sms/phone"
+        private const val PHONE_REPORT_INTERVAL_MS = 10_000L
+    }
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val phoneReporter = object : Runnable {
+        override fun run() {
+            reportSimNames()
+            mainHandler.postDelayed(this, PHONE_REPORT_INTERVAL_MS)
+        }
     }
 
     private var smsObserver: ContentObserver? = null
@@ -33,6 +44,7 @@ class KeepaliveService : Service() {
         super.onCreate()
         createNotificationChannel()
         registerSmsObserver()
+        startPhoneReporter()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -46,6 +58,7 @@ class KeepaliveService : Service() {
     }
 
     override fun onDestroy() {
+        mainHandler.removeCallbacks(phoneReporter)
         smsObserver?.let { contentResolver.unregisterContentObserver(it) }
         super.onDestroy()
     }
@@ -145,6 +158,33 @@ class KeepaliveService : Service() {
                 }
             }
         } catch (e: Exception) { /* 权限不足时静默失败 */ }
+    }
+
+    private fun startPhoneReporter() {
+        mainHandler.removeCallbacks(phoneReporter)
+        mainHandler.post(phoneReporter)
+    }
+
+    private fun reportSimNames() {
+        val simNames = getActiveSimNames()
+        if (simNames.isEmpty()) return
+
+        simNames.forEach { simName ->
+            SmsUploader.uploadPhoneStatus(PHONE_REPORT_URL, SmsEventEmitter.serverToken, simName)
+            Log.d("CaptureSMS", "report sim_name=$simName")
+        }
+    }
+
+    private fun getActiveSimNames(): List<String> {
+        return try {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP_MR1) return emptyList()
+            val list = SubscriptionManager.from(this).activeSubscriptionInfoList ?: return emptyList()
+            list.mapNotNull { it?.displayName?.toString()?.trim() }
+                .filter { it.isNotEmpty() }
+                .distinct()
+        } catch (e: Exception) {
+            emptyList()
+        }
     }
 
     private fun getSlotBySubId(subId: Int): Int {
