@@ -120,12 +120,14 @@ class KeepaliveService : Service() {
 
                     val simSlot = getSlotBySubId(subId)
                     val simName = getSimNameBySubId(subId, simSlot)
+                    val phoneNumber = getPhoneNumberBySubId(subId)
 
                     val record = mapOf(
                         "sender"    to sender,
                         "body"      to body,
                         "sim_slot"  to simSlot,
                         "sim_name"  to simName,
+                        "phone_number" to phoneNumber,
                         "timestamp" to date
                     )
 
@@ -159,6 +161,24 @@ class KeepaliveService : Service() {
                     ?: "SIM${slotIndex + 1}"
             } else "SIM${slotIndex + 1}"
         } catch (e: Exception) { "SIM${slotIndex + 1}" }
+    }
+
+
+    private fun getPhoneNumberBySubId(subId: Int): String {
+        return try {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP_MR1) return ""
+
+            val manager = android.telephony.SubscriptionManager.from(this)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && subId != -1) {
+                manager.getPhoneNumber(subId).orEmpty().ifEmpty {
+                    manager.getActiveSubscriptionInfo(subId)?.number.orEmpty()
+                }
+            } else {
+                manager.getActiveSubscriptionInfo(subId)?.number.orEmpty()
+            }
+        } catch (e: Exception) {
+            ""
+        }
     }
 
     // ── 通知 ──

@@ -139,6 +139,7 @@ export default {
                     body: '【测试】这是一条测试短信',
                     sim_slot: 0,
                     sim_name: 'SIM1',
+                    phone_number: '',
                     timestamp: Date.now()
                 },
                 timeout: 8000,

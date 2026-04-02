@@ -71,7 +71,10 @@
                     <view class="sim-tag" :class="item.sim_slot === 0 ? 'tag-blue' : 'tag-orange'">
                         <text class="sim-tag-text">{{ item.sim_name || ('SIM' + (item.sim_slot + 1)) }}</text>
                     </view>
-                    <text class="log-sender">{{ item.sender }}</text>
+                    <view class="log-meta">
+                        <text class="log-sender">{{ item.sender }}</text>
+                        <text v-if="item.phone_number" class="log-phone">Phone: {{ item.phone_number }}</text>
+                    </view>
                     <text class="log-time">{{ formatTime(item.timestamp) }}</text>
                 </view>
                 <text class="log-body">{{ item.body }}</text>
@@ -533,11 +536,25 @@ export default {
     color: #e65100;
 }
 
+.log-meta {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6rpx;
+}
+
 .log-sender {
     font-size: 28rpx;
     font-weight: 600;
     color: #212121;
-    flex: 1;
+}
+
+.log-phone {
+    font-size: 22rpx;
+    color: #8a94a6;
+    line-height: 1.4;
+    word-break: break-all;
 }
 
 .log-time {

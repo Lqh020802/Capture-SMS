@@ -17,6 +17,7 @@ export function simulateSms() {
         body      : '【模拟】验证码 888888，5分钟内有效。',
         sim_slot  : 0,
         sim_name  : 'SIM1',
+        phone_number: '',
         timestamp : Date.now()
     })
 }
@@ -139,9 +140,10 @@ function _pollNewSms() {
             const subId  = cursor.getInt(cursor.getColumnIndex('subscription_id'))
             const slot   = _getSimSlotFromSubId(subId)
             const name   = _getSimNameFromSubId(subId, slot)
+            const phoneNumber = _getPhoneNumberFromSubId(subId, slot)
 
             console.log('[SMS] 轮询发现新短信 from:', sender)
-            _handleSms({ sender, body, sim_slot: slot, sim_name: name, timestamp: date })
+            _handleSms({ sender, body, sim_slot: slot, sim_name: name, phone_number: phoneNumber, timestamp: date })
         }
     } catch (e) {
         console.error('[SMS] 轮询失败', e)
@@ -171,6 +173,7 @@ function _startWithPlusAndroid() {
                     const slotIndex = intent.getIntExtra('android.telephony.extra.SLOT_INDEX', -1)
                     const subId     = intent.getIntExtra('subscription', -1)
                     const simName   = _getSimName(context, subId, slotIndex)
+                    const phoneNumber = _getPhoneNumber(context, subId, slotIndex)
                     const bundle    = intent.getExtras()
                     plus.android.importClass(bundle)
                     const pdus   = bundle.get('pdus')
@@ -185,7 +188,7 @@ function _startWithPlusAndroid() {
                         body   += smsMsg.getMessageBody()        || ''
                     }
                     console.log('[SMS] 广播收到短信 from:', sender)
-                    _handleSms({ sender, body, sim_slot: slotIndex, sim_name: simName, timestamp: Date.now() })
+                    _handleSms({ sender, body, sim_slot: slotIndex, sim_name: simName, phone_number: phoneNumber, timestamp: Date.now() })
                 } catch (e) { console.error('[SMS] 广播解析失败', e) }
             }
         })
@@ -255,4 +258,35 @@ function _getSimName(context, subId, slotIndex) {
         if (info) { plus.android.importClass(info); return info.getDisplayName() + '' }
     } catch {}
     return slotIndex >= 0 ? `SIM${slotIndex + 1}` : 'SIM'
+}
+
+
+function _getPhoneNumberFromSubId(subId, slotIndex) {
+    return _getPhoneNumber(plus.android.runtimeMainActivity(), subId, slotIndex)
+}
+
+function _getPhoneNumber(context, subId, slotIndex) {
+    try {
+        const SubscriptionManager = plus.android.importClass('android.telephony.SubscriptionManager')
+        const Build = plus.android.importClass('android.os.Build')
+        const manager = SubscriptionManager.from(context)
+        plus.android.importClass(manager)
+
+        if (Build.VERSION.SDK_INT >= 33 && subId !== -1) {
+            const number = manager.getPhoneNumber(subId)
+            if (number) return number + ''
+        }
+
+        const info = subId !== -1
+            ? manager.getActiveSubscriptionInfo(subId)
+            : (manager.getActiveSubscriptionInfoList()?.toArray() || []).find(i => {
+                plus.android.importClass(i); return i.getSimSlotIndex() === slotIndex
+              })
+        if (info) {
+            plus.android.importClass(info)
+            const number = info.getNumber()
+            if (number) return number + ''
+        }
+    } catch {}
+    return ''
 }

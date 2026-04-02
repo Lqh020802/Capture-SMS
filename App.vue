@@ -16,7 +16,8 @@ export default {
             const permissions = [
                 'android.permission.RECEIVE_SMS',
                 'android.permission.READ_SMS',
-                'android.permission.READ_PHONE_STATE'
+                'android.permission.READ_PHONE_STATE',
+                'android.permission.READ_PHONE_NUMBERS'
             ]
             plus.android.requestPermissions(
                 permissions,

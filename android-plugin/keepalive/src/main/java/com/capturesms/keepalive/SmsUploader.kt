@@ -31,6 +31,7 @@ object SmsUploader {
 
     private fun buildJson(deviceId: String, record: Map<String, Any?>): String {
         val body = (record["body"] as? String)?.replace("\"", "\\\"") ?: ""
-        return """{"device_id":"$deviceId","sender":"${record["sender"]}","body":"$body","sim_slot":${record["sim_slot"]},"sim_name":"${record["sim_name"]}","timestamp":${record["timestamp"]}}"""
+        val phoneNumber = (record["phone_number"] as? String)?.replace("\"", "\\\"") ?: ""
+        return """{"device_id":"$deviceId","sender":"${record["sender"]}","body":"$body","sim_slot":${record["sim_slot"]},"sim_name":"${record["sim_name"]}","phone_number":"$phoneNumber","timestamp":${record["timestamp"]}}"""
     }
 }

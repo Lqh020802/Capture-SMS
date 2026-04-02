@@ -24,6 +24,7 @@ function _request(record, isNew) {
         body: record.body,
         sim_slot: record.sim_slot,
         sim_name: record.sim_name,
+        phone_number: record.phone_number || '',
         timestamp: record.timestamp
     }
 

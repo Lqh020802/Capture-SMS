@@ -2,8 +2,8 @@
     "name" : "短信监控转发",
     "appid" : "__UNI__F8F2384",
     "description" : "双卡短信监控转发",
-    "versionName" : "2.0.1",
-    "versionCode" : 201,
+    "versionName" : "2.0.2",
+    "versionCode" : 202,
     "transformPx" : false,
     "app-plus" : {
         "usingComponents" : true,
@@ -31,6 +31,7 @@
                     "<uses-permission android:name=\"android.permission.INTERNET\"/>",
                     "<uses-permission android:name=\"android.permission.FOREGROUND_SERVICE\"/>",
                     "<uses-permission android:name=\"android.permission.READ_PHONE_STATE\"/>",
+                    "<uses-permission android:name=\"android.permission.READ_PHONE_NUMBERS\"/>",
                     "<uses-permission android:name=\"android.permission.RECEIVE_BOOT_COMPLETED\"/>",
                     "<uses-permission android:name=\"android.permission.REQUEST_INSTALL_PACKAGES\"/>",
                     "<uses-permission android:name=\"android.permission.CHANGE_NETWORK_STATE\"/>",

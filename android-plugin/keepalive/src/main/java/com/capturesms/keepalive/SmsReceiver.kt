@@ -31,12 +31,14 @@ class SmsReceiver : BroadcastReceiver() {
         }
 
         val simName = getSimName(context, subId, slotIndex)
+        val phoneNumber = getPhoneNumber(context, subId, slotIndex)
 
         val record = mapOf(
             "sender"    to sender,
             "body"      to body.toString(),
             "sim_slot"  to slotIndex,
             "sim_name"  to simName,
+            "phone_number" to phoneNumber,
             "timestamp" to System.currentTimeMillis()
         )
 
@@ -78,6 +80,28 @@ class SmsReceiver : BroadcastReceiver() {
             info?.displayName?.toString() ?: "SIM${slotIndex + 1}"
         } catch (_: Exception) {
             "SIM${slotIndex + 1}"
+        }
+    }
+
+
+    private fun getPhoneNumber(context: Context, subId: Int, slotIndex: Int): String {
+        return try {
+            val manager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
+                SubscriptionManager.from(context)
+            } else return ""
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && subId != -1) {
+                manager.getPhoneNumber(subId).orEmpty().ifEmpty {
+                    manager.getActiveSubscriptionInfo(subId)?.number.orEmpty()
+                }
+            } else {
+                val info = if (subId != -1) manager.getActiveSubscriptionInfo(subId)
+                           else manager.activeSubscriptionInfoList
+                               ?.firstOrNull { it.simSlotIndex == slotIndex }
+                info?.number?.orEmpty() ?: ""
+            }
+        } catch (_: Exception) {
+            ""
         }
     }
 }
