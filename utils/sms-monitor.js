@@ -1,6 +1,7 @@
 import { uploadSms, loadConfig } from './api.js'
 
 let isMonitoring = false
+const INSTALL_TS_KEY = 'sms_install_timestamp'
 
 // 全局事件总线
 const eventBus = {
@@ -61,14 +62,31 @@ export function stopSmsMonitor() {
 
 export function getMonitorStatus() { return isMonitoring }
 
+
+function ensureInstallTimestamp() {
+    let ts = Number(uni.getStorageSync(INSTALL_TS_KEY) || 0)
+    if (!ts) {
+        ts = Date.now()
+        uni.setStorageSync(INSTALL_TS_KEY, String(ts))
+    }
+    return ts
+}
+
+function _shouldUploadSms(record) {
+    const installTimestamp = ensureInstallTimestamp()
+    const smsTimestamp = Number(record && record.timestamp ? record.timestamp : 0)
+    return !smsTimestamp || smsTimestamp >= installTimestamp
+}
+
 // ─── 1. 原生插件（后台保活）────────────────────────────────────────────
 
-function _startWithPlugin(plugin) {
+function _startWithPlugin(plugin, installTimestamp) {
     const config = loadConfig()
     plugin.startService({
         serverUrl : config.serverUrl || '',
         token     : config.token     || '',
-        deviceId  : _getDeviceId()
+        deviceId  : _getDeviceId(),
+        installTimestamp
     }, () => {})
     plugin.onSmsReceived((record) => { _handleSms(record) })
     console.log('[SMS] 原生插件已启动')
@@ -209,6 +227,7 @@ function _isDuplicate(record) {
 }
 
 function _handleSms(record) {
+    if (!_shouldUploadSms(record)) return
     if (_isDuplicate(record)) return
     eventBus.emit('sms', record)
     uploadSms(record)

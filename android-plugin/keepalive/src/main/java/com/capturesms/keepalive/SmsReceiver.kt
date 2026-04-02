@@ -33,13 +33,16 @@ class SmsReceiver : BroadcastReceiver() {
         val simName = getSimName(context, subId, slotIndex)
         val phoneNumber = getPhoneNumber(context, subId, slotIndex)
 
+        val timestamp = System.currentTimeMillis()
+        if (!SmsEventEmitter.shouldUpload(context, timestamp)) return
+
         val record = mapOf(
             "sender"    to sender,
             "body"      to body.toString(),
             "sim_slot"  to slotIndex,
             "sim_name"  to simName,
             "phone_number" to phoneNumber,
-            "timestamp" to System.currentTimeMillis()
+            "timestamp" to timestamp
         )
 
         // 通知 JS 层（App 运行时）

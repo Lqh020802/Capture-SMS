@@ -118,6 +118,7 @@ class KeepaliveService : Service() {
                     val subId  = it.getInt(it.getColumnIndexOrThrow("subscription_id"))
 
                     if (id > lastSmsId) lastSmsId = id
+                    if (!SmsEventEmitter.shouldUpload(this@KeepaliveService, date)) continue
 
                     val simSlot = getSlotBySubId(subId)
                     val simName = getSimNameBySubId(subId, simSlot)

@@ -27,13 +27,19 @@ class KeepaliveModule : UniModule() {
      */
     @UniJSMethod(uiThread = false)
     fun startService(options: Map<String, Any?>?, callback: UniJSCallback?) {
+        val ctx = mWXSDKInstance?.context ?: return
         options?.let {
             SmsEventEmitter.serverUrl  = it["serverUrl"]  as? String ?: ""
             SmsEventEmitter.serverToken = it["token"]     as? String ?: ""
             SmsEventEmitter.deviceId   = it["deviceId"]  as? String ?: ""
+            val installTimestamp = when (val value = it["installTimestamp"]) {
+                is Number -> value.toLong()
+                is String -> value.toLongOrNull() ?: 0L
+                else -> 0L
+            }
+            SmsEventEmitter.setInstallTimestamp(ctx, installTimestamp)
         }
 
-        val ctx = mWXSDKInstance?.context ?: return
         val intent = Intent(ctx, KeepaliveService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             ctx.startForegroundService(intent)
