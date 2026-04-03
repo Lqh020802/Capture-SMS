@@ -259,7 +259,7 @@ function _getSimSlotFromSubId(subId) {
 
 function _formatPhoneLabel(phoneNumber) {
     const normalized = _normalizePhoneNumber(phoneNumber)
-    return normalized ? `Phone ${normalized}` : ''
+    return normalized || ''
 }
 
 function _resolveSimName(info, slotIndex, phoneNumber = '') {

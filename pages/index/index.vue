@@ -73,7 +73,7 @@
                     </view>
                     <view class="log-meta">
                         <text class="log-sender">{{ item.sender }}</text>
-                        <text v-if="item.phone_number" class="log-phone">Phone: {{ item.phone_number }}</text>
+                        <text v-if="item.phone_number" class="log-phone">{{ item.phone_number }}</text>
                     </view>
                     <text class="log-time">{{ formatTime(item.timestamp) }}</text>
                 </view>
