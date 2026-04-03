@@ -135,8 +135,8 @@ class KeepaliveService : Service() {
                     if (!SmsEventEmitter.shouldUpload(this@KeepaliveService, date)) continue
 
                     val simSlot = getSlotBySubId(subId)
-                    val simName = getSimNameBySubId(subId, simSlot)
                     val phoneNumber = getPhoneNumberBySubId(subId)
+                    val simName = getSimNameBySubId(subId, simSlot, phoneNumber)
 
                     val record = mapOf(
                         "sender"    to sender,
@@ -196,14 +196,20 @@ class KeepaliveService : Service() {
         } catch (e: Exception) { 0 }
     }
 
-    private fun getSimNameBySubId(subId: Int, slotIndex: Int): String {
+    private fun getSimNameBySubId(subId: Int, slotIndex: Int, phoneNumber: String): String {
         return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
-                android.telephony.SubscriptionManager.from(this)
-                    .getActiveSubscriptionInfo(subId)?.displayName?.toString()
-                    ?: "SIM${slotIndex + 1}"
-            } else "SIM${slotIndex + 1}"
-        } catch (e: Exception) { "SIM${slotIndex + 1}" }
+                val displayName = android.telephony.SubscriptionManager.from(this)
+                    .getActiveSubscriptionInfo(subId)?.displayName?.toString()?.trim().orEmpty()
+                if (displayName.isNotEmpty()) displayName else fallbackSimName(slotIndex, phoneNumber)
+            } else fallbackSimName(slotIndex, phoneNumber)
+        } catch (e: Exception) { fallbackSimName(slotIndex, phoneNumber) }
+    }
+
+    private fun fallbackSimName(slotIndex: Int, phoneNumber: String): String {
+        val normalizedPhone = normalizePhoneNumber(phoneNumber)
+        if (normalizedPhone.isNotEmpty()) return "Phone $normalizedPhone"
+        return ""
     }
 
 

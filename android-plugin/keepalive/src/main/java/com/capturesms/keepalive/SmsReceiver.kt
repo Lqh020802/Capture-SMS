@@ -31,8 +31,8 @@ class SmsReceiver : BroadcastReceiver() {
             body.append(msg.messageBody ?: "")
         }
 
-        val simName = getSimName(context, subId, slotIndex)
         val phoneNumber = getPhoneNumber(context, subId, slotIndex)
+        val simName = getSimName(context, subId, slotIndex, phoneNumber)
 
         val timestamp = System.currentTimeMillis()
         if (!SmsEventEmitter.shouldUpload(context, timestamp)) return
@@ -71,20 +71,27 @@ class SmsReceiver : BroadcastReceiver() {
         } catch (_: Exception) {}
     }
 
-    private fun getSimName(context: Context, subId: Int, slotIndex: Int): String {
+    private fun getSimName(context: Context, subId: Int, slotIndex: Int, phoneNumber: String): String {
         return try {
             val manager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
                 SubscriptionManager.from(context)
-            } else return "SIM${slotIndex + 1}"
+            } else return fallbackSimName(slotIndex, phoneNumber)
 
             val info = if (subId != -1) manager.getActiveSubscriptionInfo(subId)
                        else manager.activeSubscriptionInfoList
                            ?.firstOrNull { it.simSlotIndex == slotIndex }
 
-            info?.displayName?.toString() ?: "SIM${slotIndex + 1}"
+            val displayName = info?.displayName?.toString()?.trim().orEmpty()
+            if (displayName.isNotEmpty()) displayName else fallbackSimName(slotIndex, phoneNumber)
         } catch (_: Exception) {
-            "SIM${slotIndex + 1}"
+            fallbackSimName(slotIndex, phoneNumber)
         }
+    }
+
+    private fun fallbackSimName(slotIndex: Int, phoneNumber: String): String {
+        val normalizedPhone = normalizePhoneNumber(phoneNumber)
+        if (normalizedPhone.isNotEmpty()) return "Phone $normalizedPhone"
+        return ""
     }
 
 

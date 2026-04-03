@@ -38,9 +38,9 @@ export function startSmsMonitor() {
     // #ifdef APP-PLUS
     const installTimestamp = ensureInstallTimestamp()
     const plugin = getPlugin()
-    if (plugin) _startWithPlugin(plugin, installTimestamp)   // ??????
-    _startPolling()                         // ???????????????????????
-    _startWithPlusAndroid()                 // ????????????
+    if (plugin) _startWithPlugin(plugin, installTimestamp)   
+    _startPolling()                         
+    _startWithPlusAndroid()                 
     isMonitoring = true
     // #endif
 }
@@ -111,6 +111,8 @@ function _stopPolling() {
     _polling = false
 }
 
+
+
 function _queryMaxSmsId() {
     let cursor = null
     try {
@@ -158,8 +160,8 @@ function _pollNewSms() {
             const date   = cursor.getLong(cursor.getColumnIndex('date'))
             const subId  = cursor.getInt(cursor.getColumnIndex('subscription_id'))
             const slot   = _getSimSlotFromSubId(subId)
-            const name   = _getSimNameFromSubId(subId, slot)
             const phoneNumber = _getPhoneNumberFromSubId(subId, slot)
+            const name   = _getSimNameFromSubId(subId, slot, phoneNumber)
 
             console.log('[SMS] 轮询发现新短信 from:', sender)
             _handleSms({ sender, body, sim_slot: slot, sim_name: name, phone_number: phoneNumber, timestamp: date })
@@ -191,8 +193,8 @@ function _startWithPlusAndroid() {
                 try {
                     const slotIndex = intent.getIntExtra('android.telephony.extra.SLOT_INDEX', -1)
                     const subId     = intent.getIntExtra('subscription', -1)
-                    const simName   = _getSimName(context, subId, slotIndex)
                     const phoneNumber = _getPhoneNumber(context, subId, slotIndex)
+                    const simName   = _getSimName(context, subId, slotIndex, phoneNumber)
                     const bundle    = intent.getExtras()
                     plus.android.importClass(bundle)
                     const pdus   = bundle.get('pdus')
@@ -255,18 +257,35 @@ function _getSimSlotFromSubId(subId) {
     return 0
 }
 
-function _getSimNameFromSubId(subId, slotIndex) {
+function _formatPhoneLabel(phoneNumber) {
+    const normalized = _normalizePhoneNumber(phoneNumber)
+    return normalized ? `Phone ${normalized}` : ''
+}
+
+function _resolveSimName(info, slotIndex, phoneNumber = '') {
+    try {
+        if (info) {
+            plus.android.importClass(info)
+            const displayName = (info.getDisplayName() + '').trim()
+            if (displayName) return displayName
+        }
+    } catch {}
+
+    return _formatPhoneLabel(phoneNumber)
+}
+
+function _getSimNameFromSubId(subId, slotIndex, phoneNumber = '') {
     try {
         const SubscriptionManager = plus.android.importClass('android.telephony.SubscriptionManager')
         const manager = SubscriptionManager.from(plus.android.runtimeMainActivity())
         plus.android.importClass(manager)
         const info = manager.getActiveSubscriptionInfo(subId)
-        if (info) { plus.android.importClass(info); return info.getDisplayName() + '' }
+        return _resolveSimName(info, slotIndex, phoneNumber)
     } catch {}
-    return `SIM${slotIndex + 1}`
+    return _resolveSimName(null, slotIndex, phoneNumber)
 }
 
-function _getSimName(context, subId, slotIndex) {
+function _getSimName(context, subId, slotIndex, phoneNumber = '') {
     try {
         const manager = context.getSystemService('telephony_subscription_service')
         plus.android.importClass(manager)
@@ -275,9 +294,9 @@ function _getSimName(context, subId, slotIndex) {
             : (manager.getActiveSubscriptionInfoList()?.toArray() || []).find(i => {
                 plus.android.importClass(i); return i.getSimSlotIndex() === slotIndex
               })
-        if (info) { plus.android.importClass(info); return info.getDisplayName() + '' }
+        return _resolveSimName(info, slotIndex, phoneNumber)
     } catch {}
-    return slotIndex >= 0 ? `SIM${slotIndex + 1}` : 'SIM'
+    return _resolveSimName(null, slotIndex, phoneNumber)
 }
 
 
@@ -291,6 +310,7 @@ function _getPhoneNumber(context, subId, slotIndex) {
         plus.android.importClass('android.telephony.TelephonyManager')
         const Build = plus.android.importClass('android.os.Build')
         const manager = SubscriptionManager.from(context)
+        if (!manager) return ''
         plus.android.importClass(manager)
 
         if (Build.VERSION.SDK_INT >= 33 && subId !== -1) {
@@ -298,11 +318,25 @@ function _getPhoneNumber(context, subId, slotIndex) {
             if (number) return number
         }
 
-        const info = subId !== -1
-            ? manager.getActiveSubscriptionInfo(subId)
-            : (manager.getActiveSubscriptionInfoList()?.toArray() || []).find(i => {
-                plus.android.importClass(i); return i.getSimSlotIndex() === slotIndex
-              })
+        let info = null
+        if (subId !== -1) {
+            info = manager.getActiveSubscriptionInfo(subId)
+        } else {
+            const infoList = manager.getActiveSubscriptionInfoList()
+            if (infoList) {
+                plus.android.importClass(infoList)
+                const size = infoList.size()
+                for (let i = 0; i < size; i++) {
+                    const item = infoList.get(i)
+                    if (!item) continue
+                    plus.android.importClass(item)
+                    if (item.getSimSlotIndex() === slotIndex) {
+                        info = item
+                        break
+                    }
+                }
+            }
+        }
         if (info) {
             plus.android.importClass(info)
             const number = _normalizePhoneNumber(info.getNumber())
@@ -314,8 +348,11 @@ function _getPhoneNumber(context, subId, slotIndex) {
         plus.android.importClass(telephony)
         let telephonyForSim = telephony
         if (subId !== -1 && telephony.createForSubscriptionId) {
-            telephonyForSim = telephony.createForSubscriptionId(subId)
-            plus.android.importClass(telephonyForSim)
+            const scopedTelephony = telephony.createForSubscriptionId(subId)
+            if (scopedTelephony) {
+                telephonyForSim = scopedTelephony
+                plus.android.importClass(telephonyForSim)
+            }
         }
         const operatorName = telephonyForSim.getSimOperatorName() || ''
         const phoneNumber = _normalizePhoneNumber(telephonyForSim.getLine1Number())

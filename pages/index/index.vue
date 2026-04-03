@@ -69,7 +69,7 @@
             <view v-for="(item, idx) in logs" :key="idx" class="log-card">
                 <view class="log-top">
                     <view class="sim-tag" :class="item.sim_slot === 0 ? 'tag-blue' : 'tag-orange'">
-                        <text class="sim-tag-text">{{ item.sim_name || ('SIM' + (item.sim_slot + 1)) }}</text>
+                        <text class="sim-tag-text">{{ item.sim_name }}</text>
                     </view>
                     <view class="log-meta">
                         <text class="log-sender">{{ item.sender }}</text>
