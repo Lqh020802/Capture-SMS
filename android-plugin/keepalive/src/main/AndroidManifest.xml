@@ -7,13 +7,12 @@
     <uses-permission android:name="android.permission.READ_SMS"/>
     <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
     <uses-permission android:name="android.permission.READ_PHONE_NUMBERS"/>
+    <uses-permission android:name="android.permission.READ_CALL_LOG"/>
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
 
     <application>
-
-        <!-- 前台保活服务 -->
         <service
             android:name=".KeepaliveService"
             android:enabled="true"
@@ -21,7 +20,6 @@
             android:foregroundServiceType="dataSync"
             android:stopWithTask="false"/>
 
-        <!-- 静态短信接收器（App 被杀后仍可接收） -->
         <receiver
             android:name=".SmsReceiver"
             android:enabled="true"
@@ -41,7 +39,6 @@
             </intent-filter>
         </receiver>
 
-        <!-- 开机自启接收器 -->
         <receiver
             android:name=".BootReceiver"
             android:enabled="true"
@@ -51,6 +48,5 @@
                 <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
             </intent-filter>
         </receiver>
-
     </application>
 </manifest>

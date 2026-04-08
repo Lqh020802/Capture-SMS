@@ -16,6 +16,7 @@ object SmsEventEmitter {
     var installTimestamp: Long = 0L
 
     private val recentKeys = LinkedHashSet<String>()
+    private val recentPhoneKeys = LinkedHashSet<String>()
 
     fun setListener(fn: (Map<String, Any?>) -> Unit) {
         listener = fn
@@ -76,7 +77,23 @@ object SmsEventEmitter {
         return true
     }
 
-    fun emitPhoneEvent(data: Map<String, Any?>) {
+    fun emitPhoneEvent(data: Map<String, Any?>): Boolean {
+        val sender = data["sender"] as? String ?: ""
+        val timestamp = data["timestamp"] as? Long ?: 0L
+        val key = "$sender:${timestamp / 10000}"
+
+        synchronized(recentPhoneKeys) {
+            if (recentPhoneKeys.contains(key)) return false
+            recentPhoneKeys.add(key)
+            if (recentPhoneKeys.size > 100) {
+                recentPhoneKeys.iterator().let {
+                    it.next()
+                    it.remove()
+                }
+            }
+        }
+
         phoneListener?.invoke(data)
+        return true
     }
 }

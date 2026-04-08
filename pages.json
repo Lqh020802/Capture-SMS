@@ -11,6 +11,12 @@
             "style": {
                 "navigationBarTitleText": "设置"
             }
+        },
+        {
+            "path": "pages/missed-calls/index",
+            "style": {
+                "navigationBarTitleText": "未接来电"
+            }
         }
     ],
     "globalStyle": {

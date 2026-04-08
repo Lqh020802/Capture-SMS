@@ -1,75 +1,73 @@
 <template>
 <view class="page">
-
-    <!-- 顶部状态区 -->
     <view class="header">
-        <!-- 状态栏占位 -->
         <view :style="{ height: statusBarHeight + 'px' }"></view>
         <view class="header-top">
             <view>
                 <text class="app-title">短信监控</text>
-                <text class="header-subtitle">短信接收、缓存与自动上报</text>
+                <text class="header-subtitle">短信监听继续保留，未接来电会单独进入新的记录页</text>
             </view>
             <view class="header-actions">
+                <view class="btn-nav" @click="goMissedCalls">
+                    <text class="btn-nav-text">未接来电</text>
+                </view>
                 <view class="btn-setting" @click="goSetting">
                     <text class="btn-setting-text">设置</text>
-                </view>
-                <view class="status-pill" :class="monitoring ? 'pill-on' : 'pill-off'">
-                    <view class="pill-dot" :class="monitoring ? 'dot-on' : 'dot-off'"></view>
-                    <text class="pill-text">{{ monitoring ? '运行中' : '已停止' }}</text>
                 </view>
             </view>
         </view>
 
-        <!-- 统计数据 -->
         <view class="stats-row">
             <view class="stat-item">
                 <text class="stat-num">{{ totalCount }}</text>
-                <text class="stat-label">累计</text>
+                <text class="stat-label">短信累计</text>
             </view>
             <view class="stat-divider"></view>
             <view class="stat-item">
                 <text class="stat-num">{{ todayCount }}</text>
-                <text class="stat-label">今日</text>
+                <text class="stat-label">今日短信</text>
             </view>
             <view class="stat-divider"></view>
             <view class="stat-item">
-                <text class="stat-num" :class="failCount > 0 ? 'num-warn' : ''">{{ failCount }}</text>
-                <text class="stat-label">待重传</text>
+                <text class="stat-num">{{ missedCount }}</text>
+                <text class="stat-label">未接来电</text>
             </view>
         </view>
 
-        <!-- 控制按钮 -->
-        <view class="ctrl-row">
-            <view class="btn-main" :class="monitoring ? 'btn-stop' : 'btn-start'" @click="toggleMonitor">
-                <text class="btn-main-text">{{ monitoring ? '停止监控' : '启动监控' }}</text>
+        <view class="status-row">
+            <view class="status-pill" :class="monitoring ? 'pill-on' : 'pill-off'">
+                <view class="pill-dot" :class="monitoring ? 'dot-on' : 'dot-off'"></view>
+                <text class="pill-text">{{ monitoring ? '监听运行中' : '监听已停止' }}</text>
             </view>
-            <view class="btn-diag" @click="runDiag">
-                <text class="btn-diag-text">诊断</text>
-            </view>
-            <view class="btn-diag" @click="testSms">
-                <text class="btn-diag-text">模拟</text>
+            <view class="ctrl-row">
+                <view class="btn-main" :class="monitoring ? 'btn-stop' : 'btn-start'" @click="toggleMonitor">
+                    <text class="btn-main-text">{{ monitoring ? '停止监听' : '启动监听' }}</text>
+                </view>
+                <view class="btn-diag" @click="runDiag">
+                    <text class="btn-diag-text">诊断</text>
+                </view>
+                <view class="btn-diag" @click="testSms">
+                    <text class="btn-diag-text">模拟</text>
+                </view>
             </view>
         </view>
     </view>
 
-    <!-- 记录列表 -->
     <view class="section">
         <view class="section-header">
-            <text class="section-title">最近记录</text>
+            <text class="section-title">最近短信</text>
             <text class="section-action" @click="clearLogs">清空</text>
         </view>
 
         <scroll-view class="log-list" scroll-y>
             <view v-if="logs.length === 0" class="empty-state">
-                <text class="empty-icon">📭</text>
                 <text class="empty-text">暂无短信记录</text>
             </view>
 
             <view v-for="(item, idx) in logs" :key="idx" class="log-card">
                 <view class="log-top">
                     <view class="sim-tag" :class="item.sim_slot === 0 ? 'tag-blue' : 'tag-orange'">
-                        <text class="sim-tag-text">{{ item.sim_name }}</text>
+                        <text class="sim-tag-text">{{ item.sim_name || simLabel(item.sim_slot) }}</text>
                     </view>
                     <view class="log-meta">
                         <text class="log-sender">{{ item.sender }}</text>
@@ -81,21 +79,20 @@
                 <view class="log-footer">
                     <view class="upload-dot" :class="item.uploaded ? 'dot-ok' : 'dot-fail'"></view>
                     <text class="upload-text" :class="item.uploaded ? 'text-ok' : 'text-fail'">
-                        {{ item.uploaded ? '已上报' : '待上报' }}
+                        {{ item.uploaded ? '已处理' : '待上报' }}
                     </text>
                 </view>
             </view>
         </scroll-view>
     </view>
 
-    <!-- 底部安全区 -->
     <view class="safe-bottom"></view>
-
 </view>
 </template>
 
 <script>
 import { startSmsMonitor, stopSmsMonitor, getMonitorStatus, eventBus, simulateSms } from '@/utils/sms-monitor.js'
+import { loadMissedCalls } from '@/utils/missed-call-store.js'
 
 export default {
     data() {
@@ -105,6 +102,7 @@ export default {
             totalCount: 0,
             todayCount: 0,
             failCount: 0,
+            missedCount: 0,
             statusBarHeight: 0
         }
     },
@@ -114,13 +112,12 @@ export default {
             frontColor: '#000000',
             backgroundColor: '#ffffff'
         })
-        // 设置 Android 底部系统导航栏为白色
         // #ifdef APP-PLUS
         try {
             const window = plus.android.runtimeMainActivity().getWindow()
             plus.android.importClass(window)
             window.setNavigationBarColor(0xFFFFFFFF)
-        } catch (e) { }
+        } catch (e) {}
         // #endif
     },
 
@@ -129,83 +126,90 @@ export default {
         this.monitoring = getMonitorStatus()
         this._loadStats()
 
-        eventBus.on('sms', (record) => {
+        this._smsListener = (record) => {
             this.logs.unshift({ ...record, uploaded: true })
             if (this.logs.length > 100) this.logs.pop()
             this.totalCount++
             this.todayCount++
             this._saveStats()
-        })
+        }
+        this._missedListener = () => {
+            this.missedCount = loadMissedCalls().length
+        }
+
+        eventBus.on('sms', this._smsListener)
+        eventBus.on('missed-call', this._missedListener)
+    },
+
+    onShow() {
+        this.missedCount = loadMissedCalls().length
+    },
+
+    onUnload() {
+        if (this._smsListener) eventBus.off('sms', this._smsListener)
+        if (this._missedListener) eventBus.off('missed-call', this._missedListener)
     },
 
     methods: {
         goSetting() {
-            uni.navigateTo({
-                url: '/pages/setting/setting'
-            })
+            uni.navigateTo({ url: '/pages/setting/setting' })
+        },
+
+        goMissedCalls() {
+            uni.navigateTo({ url: '/pages/missed-calls/index' })
         },
 
         toggleMonitor() {
             if (this.monitoring) {
                 stopSmsMonitor()
                 this.monitoring = false
-                uni.showToast({ title: '监控已停止', icon: 'none' })
+                uni.showToast({ title: '监听已停止', icon: 'none' })
             } else {
                 startSmsMonitor()
                 this.monitoring = true
-                uni.showToast({ title: '监控已启动', icon: 'success' })
+                uni.showToast({ title: '监听已启动', icon: 'success' })
             }
         },
 
         runDiag() {
             // #ifdef APP-PLUS
             let msg = ''
-            // 1. 插件
             try {
                 const p = uni.requireNativePlugin('Capture-Keepalive')
-                msg += (p ? '✅' : '❌') + ' 原生插件：' + (p ? '已加载' : '返回空') + '\n'
-            } catch (e) { msg += '❌ 原生插件加载失败\n' }
-            // 2. 权限
+                msg += (p ? '√' : '×') + ' 原生插件 ' + (p ? '已加载' : '加载失败') + '\n'
+            } catch (e) {
+                msg += '× 原生插件加载失败\n'
+            }
             try {
                 const ctx = plus.android.runtimeMainActivity()
                 plus.android.importClass(ctx)
-                    ;['RECEIVE_SMS', 'READ_SMS', 'READ_PHONE_STATE'].forEach(name => {
-                        const full = 'android.permission.' + name
-                        const ok = ctx.checkSelfPermission(full) === 0
-                        msg += (ok ? '✅' : '❌') + ' ' + name + '\n'
-                    })
-            } catch (e) { msg += '⚠️ 权限检查失败\n' }
+                ;['RECEIVE_SMS', 'READ_SMS', 'READ_PHONE_STATE', 'READ_CALL_LOG'].forEach(name => {
+                    const full = 'android.permission.' + name
+                    const ok = ctx.checkSelfPermission(full) === 0
+                    msg += (ok ? '√' : '×') + ' ' + name + '\n'
+                })
+            } catch (e) {
+                msg += '权限检查失败\n'
+            }
 
-            // 3. 小米/MIUI 检测
-            try {
-                const Build = plus.android.importClass('android.os.Build')
-                const manufacturer = Build.MANUFACTURER + ''
-                const isXiaomi = manufacturer.toLowerCase().includes('xiaomi')
-                if (isXiaomi) {
-                    msg += '\n⚠️ 检测到小米设备\n'
-                    msg += '请手动开启：\n设置→应用→本应用→权限\n→打开「短信」和「通知类短信」'
-                }
-            } catch (e) { }
+            msg += '\n' + (this.monitoring ? '√' : '×') + ' 监听状态 ' + (this.monitoring ? '运行中' : '已停止')
+            msg += '\n未接来电记录 ' + this.missedCount + ' 条'
 
-            // 4. 监控状态
-            msg += '\n' + (this.monitoring ? '✅' : '❌') + ' 监控：' + (this.monitoring ? '运行中' : '已停止')
             uni.showModal({
                 title: '诊断结果',
                 content: msg,
                 confirmText: '去权限设置',
                 cancelText: '关闭',
                 success: (res) => {
-                    if (res.confirm) {
-                        // 跳转到 App 权限设置页
-                        // #ifdef APP-PLUS
-                        const Intent = plus.android.importClass('android.content.Intent')
-                        const Settings = plus.android.importClass('android.provider.Settings')
-                        const Uri = plus.android.importClass('android.net.Uri')
-                        const intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-                        intent.setData(Uri.fromParts('package', plus.runtime.appid, null))
-                        plus.android.runtimeMainActivity().startActivity(intent)
-                        // #endif
-                    }
+                    if (!res.confirm) return
+                    // #ifdef APP-PLUS
+                    const Intent = plus.android.importClass('android.content.Intent')
+                    const Settings = plus.android.importClass('android.provider.Settings')
+                    const Uri = plus.android.importClass('android.net.Uri')
+                    const intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                    intent.setData(Uri.fromParts('package', plus.runtime.packageName || plus.runtime.appid, null))
+                    plus.android.runtimeMainActivity().startActivity(intent)
+                    // #endif
                 }
             })
             // #endif
@@ -213,20 +217,25 @@ export default {
 
         testSms() {
             simulateSms()
-            uni.showToast({ title: '已模拟发送', icon: 'none' })
+            uni.showToast({ title: '已模拟短信', icon: 'none' })
         },
 
         clearLogs() {
             uni.showModal({
                 title: '确认清空',
-                content: '将清空本地日志记录',
+                content: '将清空本地短信日志记录',
                 success: (res) => {
-                    if (res.confirm) {
-                        this.logs = []
-                        uni.showToast({ title: '已清空', icon: 'success' })
-                    }
+                    if (!res.confirm) return
+                    this.logs = []
+                    uni.showToast({ title: '已清空', icon: 'success' })
                 }
             })
+        },
+
+        simLabel(slot) {
+            if (slot === 0) return 'SIM1'
+            if (slot === 1) return 'SIM2'
+            return 'SIM'
         },
 
         formatTime(ts) {
@@ -238,10 +247,13 @@ export default {
         _loadStats() {
             this.totalCount = uni.getStorageSync('stat_total') || 0
             this.todayCount = uni.getStorageSync('stat_today') || 0
+            this.missedCount = loadMissedCalls().length
             try {
                 const pending = uni.getStorageSync('sms_pending')
                 this.failCount = pending ? JSON.parse(pending).length : 0
-            } catch { this.failCount = 0 }
+            } catch {
+                this.failCount = 0
+            }
         },
 
         _saveStats() {
@@ -258,7 +270,6 @@ export default {
     background: #f7f8fa;
 }
 
-/* ── 顶部 Header ── */
 .header {
     background: #ffffff;
     padding: 48rpx 40rpx 32rpx;
@@ -287,6 +298,7 @@ export default {
     font-size: 22rpx;
     color: #9aa0a6;
     letter-spacing: 1rpx;
+    line-height: 1.6;
 }
 
 .header-actions {
@@ -295,31 +307,86 @@ export default {
     gap: 16rpx;
 }
 
+.btn-nav,
 .btn-setting {
     min-width: 108rpx;
     height: 60rpx;
     padding: 0 24rpx;
     border-radius: 999rpx;
-    background: #111;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 8rpx 20rpx rgba(17, 17, 17, 0.08);
+}
+
+.btn-nav {
+    background: #eef2ff;
+}
+
+.btn-setting {
+    background: #111;
+}
+
+.btn-nav-text {
+    font-size: 24rpx;
+    font-weight: 600;
+    color: #3730a3;
 }
 
 .btn-setting-text {
     font-size: 24rpx;
     font-weight: 600;
     color: #fff;
-    letter-spacing: 2rpx;
+}
+
+.stats-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    background: #f7f8fa;
+    border-radius: 20rpx;
+    padding: 28rpx 0;
+    margin-bottom: 28rpx;
+}
+
+.stat-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+}
+
+.stat-num {
+    font-size: 52rpx;
+    font-weight: 700;
+    color: #111;
+    line-height: 1.1;
+}
+
+.stat-label {
+    font-size: 22rpx;
+    color: #9e9e9e;
+    margin-top: 8rpx;
+}
+
+.stat-divider {
+    width: 1rpx;
+    height: 60rpx;
+    background: #e0e0e0;
+}
+
+.status-row {
+    display: flex;
+    flex-direction: column;
+    gap: 18rpx;
 }
 
 .status-pill {
     display: flex;
     align-items: center;
-    padding: 10rpx 24rpx;
+    padding: 12rpx 24rpx;
     border-radius: 40rpx;
     gap: 10rpx;
+    align-self: flex-start;
 }
 
 .pill-on {
@@ -349,56 +416,6 @@ export default {
     font-weight: 600;
 }
 
-.pill-on .pill-text {
-    color: #2e7d32;
-}
-
-.pill-off .pill-text {
-    color: #9e9e9e;
-}
-
-/* 统计 */
-.stats-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-around;
-    background: #f7f8fa;
-    border-radius: 20rpx;
-    padding: 28rpx 0;
-    margin-bottom: 32rpx;
-}
-
-.stat-item {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    flex: 1;
-}
-
-.stat-num {
-    font-size: 52rpx;
-    font-weight: 700;
-    color: #111;
-    line-height: 1.1;
-}
-
-.num-warn {
-    color: #f57c00;
-}
-
-.stat-label {
-    font-size: 22rpx;
-    color: #9e9e9e;
-    margin-top: 8rpx;
-}
-
-.stat-divider {
-    width: 1rpx;
-    height: 60rpx;
-    background: #e0e0e0;
-}
-
-/* 控制按钮 */
 .ctrl-row {
     display: flex;
     gap: 16rpx;
@@ -421,11 +438,6 @@ export default {
     display: flex;
     align-items: center;
     justify-content: center;
-}
-
-.btn-diag-text {
-    font-size: 26rpx;
-    color: #888;
 }
 
 .btn-start {
@@ -451,7 +463,11 @@ export default {
     color: #f44336;
 }
 
-/* ── 记录列表 ── */
+.btn-diag-text {
+    font-size: 26rpx;
+    color: #888;
+}
+
 .section {
     padding: 32rpx 40rpx 0;
 }
@@ -479,15 +495,8 @@ export default {
 }
 
 .empty-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
     padding: 120rpx 0;
-    gap: 20rpx;
-}
-
-.empty-icon {
-    font-size: 80rpx;
+    text-align: center;
 }
 
 .empty-text {
@@ -495,7 +504,6 @@ export default {
     color: #bdbdbd;
 }
 
-/* 卡片 */
 .log-card {
     background: #fff;
     border-radius: 20rpx;

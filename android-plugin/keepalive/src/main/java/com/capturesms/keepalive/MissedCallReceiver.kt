@@ -3,6 +3,9 @@ package com.capturesms.keepalive
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
+import android.provider.CallLog
 import android.telephony.TelephonyManager
 import android.util.Log
 
@@ -10,10 +13,13 @@ class MissedCallReceiver : BroadcastReceiver() {
 
     companion object {
         private const val TAG = "CaptureSMS"
+        private const val QUERY_DELAY_MS = 1800L
 
         private var lastState: String? = TelephonyManager.EXTRA_STATE_IDLE
         private var incomingNumber: String = ""
         private var ringingTimestamp: Long = 0L
+        private var lastQueryAt: Long = 0L
+        private val handler = Handler(Looper.getMainLooper())
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -38,24 +44,11 @@ class MissedCallReceiver : BroadcastReceiver() {
             }
 
             TelephonyManager.EXTRA_STATE_IDLE -> {
-                val lastKnownNumber = if (number.isNotEmpty()) number else incomingNumber
-                if (lastState == TelephonyManager.EXTRA_STATE_RINGING && lastKnownNumber.isNotEmpty()) {
+                if (lastState == TelephonyManager.EXTRA_STATE_RINGING) {
+                    val fallbackNumber = if (number.isNotEmpty()) number else incomingNumber
                     val subId = extractSubscriptionId(intent)
                     val slotIndex = extractSlotIndex(context, intent, subId)
-                    val phoneNumber = PhoneUtils.getPhoneNumber(context, subId, slotIndex)
-                    val simName = PhoneUtils.getSimName(context, subId, slotIndex, phoneNumber)
-                    val record = mapOf(
-                        "event_type" to "missed_call",
-                        "sender" to lastKnownNumber,
-                        "body" to "未接来电",
-                        "sim_slot" to slotIndex,
-                        "sim_name" to simName,
-                        "phone_number" to phoneNumber,
-                        "timestamp" to if (ringingTimestamp > 0L) ringingTimestamp else System.currentTimeMillis()
-                    )
-
-                    Log.d(TAG, "missed call detected: $record")
-                    SmsEventEmitter.emitPhoneEvent(record)
+                    scheduleMissedCallCheck(context.applicationContext, subId, slotIndex, fallbackNumber, ringingTimestamp)
                 }
 
                 incomingNumber = ""
@@ -63,6 +56,105 @@ class MissedCallReceiver : BroadcastReceiver() {
                 lastState = state
             }
         }
+    }
+
+    private fun scheduleMissedCallCheck(
+        context: Context,
+        subId: Int,
+        slotIndex: Int,
+        fallbackNumber: String,
+        ringAt: Long
+    ) {
+        val startedAt = if (ringAt > 0L) ringAt else System.currentTimeMillis()
+        handler.postDelayed({
+            val record = queryLatestMissedCall(context, subId, slotIndex, startedAt)
+                ?: buildFallbackRecord(context, subId, slotIndex, fallbackNumber, startedAt)
+            if (record != null) {
+                Log.d(TAG, "missed call detected: $record")
+                SmsEventEmitter.emitPhoneEvent(record)
+            } else {
+                Log.d(TAG, "missed call check finished but no usable record found")
+            }
+        }, QUERY_DELAY_MS)
+    }
+
+    private fun queryLatestMissedCall(
+        context: Context,
+        subId: Int,
+        slotIndex: Int,
+        startedAt: Long
+    ): Map<String, Any?>? {
+        var cursor: android.database.Cursor? = null
+        return try {
+            cursor = context.contentResolver.query(
+                CallLog.Calls.CONTENT_URI,
+                arrayOf(
+                    CallLog.Calls.NUMBER,
+                    CallLog.Calls.DATE,
+                    CallLog.Calls.TYPE,
+                    CallLog.Calls.DURATION,
+                    CallLog.Calls.PHONE_ACCOUNT_ID
+                ),
+                "${CallLog.Calls.TYPE} = ? AND ${CallLog.Calls.DATE} >= ?",
+                arrayOf(
+                    CallLog.Calls.MISSED_TYPE.toString(),
+                    (startedAt - 30_000L).toString()
+                ),
+                "${CallLog.Calls.DATE} DESC"
+            )
+
+            if (cursor == null || !cursor.moveToFirst()) return null
+
+            val date = cursor.getLong(cursor.getColumnIndexOrThrow(CallLog.Calls.DATE))
+            if (date <= lastQueryAt) return null
+            lastQueryAt = date
+
+            val number = PhoneUtils.normalizePhoneNumber(
+                cursor.getString(cursor.getColumnIndexOrThrow(CallLog.Calls.NUMBER))
+            )
+            val duration = cursor.getLong(cursor.getColumnIndexOrThrow(CallLog.Calls.DURATION))
+            val phoneNumber = PhoneUtils.getPhoneNumber(context, subId, slotIndex)
+            val simName = PhoneUtils.getSimName(context, subId, slotIndex, phoneNumber)
+
+            mapOf(
+                "event_type" to "missed_call",
+                "sender" to if (number.isNotEmpty()) number else "未知号码",
+                "body" to "未接来电",
+                "sim_slot" to slotIndex,
+                "sim_name" to simName,
+                "phone_number" to phoneNumber,
+                "timestamp" to date,
+                "duration" to duration
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "query missed call log failed", e)
+            null
+        } finally {
+            cursor?.close()
+        }
+    }
+
+    private fun buildFallbackRecord(
+        context: Context,
+        subId: Int,
+        slotIndex: Int,
+        fallbackNumber: String,
+        startedAt: Long
+    ): Map<String, Any?>? {
+        val phoneNumber = PhoneUtils.getPhoneNumber(context, subId, slotIndex)
+        val simName = PhoneUtils.getSimName(context, subId, slotIndex, phoneNumber)
+        if (fallbackNumber.isEmpty() && simName.isEmpty() && phoneNumber.isEmpty()) return null
+
+        return mapOf(
+            "event_type" to "missed_call",
+            "sender" to if (fallbackNumber.isNotEmpty()) fallbackNumber else "未知号码",
+            "body" to "未接来电",
+            "sim_slot" to slotIndex,
+            "sim_name" to simName,
+            "phone_number" to phoneNumber,
+            "timestamp" to startedAt,
+            "duration" to 0L
+        )
     }
 
     private fun extractSubscriptionId(intent: Intent): Int {

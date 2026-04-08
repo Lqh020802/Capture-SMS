@@ -1,4 +1,5 @@
 import { uploadSms, loadConfig, uploadPhoneStatus } from './api.js'
+import { saveMissedCall } from './missed-call-store.js'
 
 let isMonitoring = false
 const INSTALL_TS_KEY = 'sms_install_timestamp'
@@ -7,8 +8,21 @@ const PHONE_REPORT_INTERVAL_MS = 10000
 // 全局事件总线
 const eventBus = {
     listeners: {},
-    on(event, fn)    { this.listeners[event] = fn },
-    emit(event, data){ this.listeners[event] && this.listeners[event](data) }
+    on(event, fn) {
+        if (!this.listeners[event]) this.listeners[event] = []
+        this.listeners[event].push(fn)
+    },
+    off(event, fn) {
+        const list = this.listeners[event]
+        if (!list) return
+        this.listeners[event] = list.filter(item => item !== fn)
+    },
+    emit(event, data) {
+        const list = this.listeners[event] || []
+        list.forEach(fn => {
+            try { fn(data) } catch (e) { console.error('[BUS] listener failed', e) }
+        })
+    }
 }
 export { eventBus }
 
@@ -97,6 +111,7 @@ function _startWithPlugin(plugin, installTimestamp) {
     if (typeof plugin.onPhoneEventReceived === 'function') {
         plugin.onPhoneEventReceived((record) => {
             console.log('[PHONE] missed call:', JSON.stringify(record))
+            saveMissedCall(record)
             eventBus.emit('missed-call', record)
         })
     }
