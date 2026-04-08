@@ -94,6 +94,12 @@ function _startWithPlugin(plugin, installTimestamp) {
         installTimestamp
     }, () => {})
     plugin.onSmsReceived((record) => { _handleSms(record) })
+    if (typeof plugin.onPhoneEventReceived === 'function') {
+        plugin.onPhoneEventReceived((record) => {
+            console.log('[PHONE] missed call:', JSON.stringify(record))
+            eventBus.emit('missed-call', record)
+        })
+    }
     console.log('[SMS] 原生插件已启动')
 }
 
