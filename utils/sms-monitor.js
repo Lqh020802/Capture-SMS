@@ -5,7 +5,9 @@ import { saveMissedCall } from './missed-call-store.js'
 let isMonitoring = false
 const INSTALL_TS_KEY = 'sms_install_timestamp'
 const PHONE_REPORT_INTERVAL_MS = 10000
-const RECORD_SCAN_DELAY_MS = 8000
+const RECORD_SCAN_DELAY_MS = 5000
+const RECORD_SCAN_RETRY_INTERVAL_MS = 5000
+const RECORD_SCAN_MAX_RETRIES = 6
 const MIUI_RECORD_DIRS = [
     '/storage/emulated/0/MIUI/sound_recorder/call_rec',
     '/sdcard/MIUI/sound_recorder/call_rec',
@@ -132,32 +134,42 @@ function _handlePhoneEvent(record) {
 }
 
 function _scheduleRecordingScan(callRecord) {
-    setTimeout(() => {
-        console.log('[PHONE] start recording scan:', JSON.stringify({
+    let attempt = 0
+    function doScan() {
+        attempt++
+        console.log('[PHONE] recording scan attempt ' + attempt + ':', JSON.stringify({
             sender: callRecord.sender,
             answered_timestamp: callRecord.answered_timestamp,
             end_timestamp: callRecord.end_timestamp
         }))
         _resolveLatestCallRecording(callRecord, (recording) => {
-            if (!recording) {
-                console.warn('[PHONE] no call recording matched')
+            if (recording) {
+                const merged = {
+                    ...callRecord,
+                    event_type: 'call_recording',
+                    file_path: recording.path,
+                    file_name: recording.name,
+                    file_size: recording.size,
+                    modified_at: recording.modifiedAt,
+                    timestamp: callRecord.end_timestamp || callRecord.timestamp || Date.now()
+                }
+                _lastRecordingPath = recording.path
+                saveCallRecording(merged)
+                eventBus.emit('call-recording', merged)
+                console.log('[PHONE] call recording found on attempt ' + attempt + ':', JSON.stringify(merged))
                 return
             }
-            const merged = {
-                ...callRecord,
-                event_type: 'call_recording',
-                file_path: recording.path,
-                file_name: recording.name,
-                file_size: recording.size,
-                modified_at: recording.modifiedAt,
-                timestamp: callRecord.end_timestamp || callRecord.timestamp || Date.now()
+            // 未找到，继续重试
+            if (attempt < RECORD_SCAN_MAX_RETRIES) {
+                console.warn('[PHONE] no recording matched, retry in ' + RECORD_SCAN_RETRY_INTERVAL_MS + 'ms (attempt ' + attempt + '/' + RECORD_SCAN_MAX_RETRIES + ')')
+                setTimeout(doScan, RECORD_SCAN_RETRY_INTERVAL_MS)
+            } else {
+                console.warn('[PHONE] no call recording matched after ' + RECORD_SCAN_MAX_RETRIES + ' attempts')
             }
-            _lastRecordingPath = recording.path
-            saveCallRecording(merged)
-            eventBus.emit('call-recording', merged)
-            console.log('[PHONE] call recording:', JSON.stringify(merged))
         })
-    }, RECORD_SCAN_DELAY_MS)
+    }
+    // 首次延迟后开始扫描
+    setTimeout(doScan, RECORD_SCAN_DELAY_MS)
 }
 
 function _resolveLatestCallRecording(callRecord, callback) {

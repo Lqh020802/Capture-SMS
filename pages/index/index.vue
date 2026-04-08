@@ -167,7 +167,33 @@ export default {
                 startSmsMonitor()
                 this.monitoring = true
                 uni.showToast({ title: '监听已启动', icon: 'success' })
+                // 启动后检查"所有文件访问"权限，未授权则引导
+                this._checkStoragePermission()
             }
+        },
+
+        _checkStoragePermission() {
+            // #ifdef APP-PLUS
+            try {
+                const plugin = uni.requireNativePlugin('Capture-Keepalive')
+                if (!plugin || typeof plugin.checkStoragePermission !== 'function') return
+                plugin.checkStoragePermission((res) => {
+                    if (res && res.granted) return
+                    uni.showModal({
+                        title: '需要文件访问权限',
+                        content: '通话录音功能需要"所有文件访问"权限才能读取系统录音目录，是否前往设置？',
+                        confirmText: '去授权',
+                        cancelText: '稍后',
+                        success: (r) => {
+                            if (!r.confirm) return
+                            plugin.requestStoragePermission(() => {})
+                        }
+                    })
+                })
+            } catch (e) {
+                console.error('[INDEX] check storage permission failed', e)
+            }
+            // #endif
         },
 
         runDiag() {
@@ -181,6 +207,13 @@ export default {
                     const ok = ctx.checkSelfPermission(full) === 0
                     msg += (ok ? '√' : '×') + ' ' + name + '\n'
                 })
+                try {
+                    const Environment = plus.android.importClass('android.os.Environment')
+                    const allFiles = Environment.isExternalStorageManager()
+                    msg += (allFiles ? '√' : '×') + ' MANAGE_EXTERNAL_STORAGE\n'
+                } catch (e) {
+                    msg += '× MANAGE_EXTERNAL_STORAGE\n'
+                }
             } catch (e) {
                 msg += '权限检查失败\n'
             }
@@ -190,7 +223,29 @@ export default {
             uni.showModal({
                 title: '诊断结果',
                 content: msg,
-                showCancel: false
+                confirmText: '去授权',
+                cancelText: '关闭',
+                success: (res) => {
+                    if (!res.confirm) return
+                    // #ifdef APP-PLUS
+                    try {
+                        const Intent = plus.android.importClass('android.content.Intent')
+                        const Settings = plus.android.importClass('android.provider.Settings')
+                        const Uri = plus.android.importClass('android.net.Uri')
+                        const activity = plus.android.runtimeMainActivity()
+                        let intent = null
+                        try {
+                            intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                            intent.setData(Uri.parse('package:' + (plus.runtime.packageName || plus.runtime.appid)))
+                        } catch (e) {
+                            intent = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                        }
+                        activity.startActivity(intent)
+                    } catch (e) {
+                        console.error('[DIAG] open all files access settings failed', e)
+                    }
+                    // #endif
+                }
             })
         },
 

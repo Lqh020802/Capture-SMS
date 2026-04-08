@@ -2,9 +2,12 @@ package com.capturesms.keepalive
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import io.dcloud.feature.uniapp.annotation.UniJSMethod
 import io.dcloud.feature.uniapp.bridge.UniJSCallback
 import io.dcloud.feature.uniapp.common.UniModule
@@ -102,6 +105,43 @@ class KeepaliveModule : UniModule() {
         val ctx = mWXSDKInstance?.context ?: return
         val running = isServiceRunning(ctx, KeepaliveService::class.java)
         callback?.invoke(mapOf("running" to running))
+    }
+
+    /** 检查是否拥有"所有文件访问"权限（Android 11+ 读取其他应用文件必需） */
+    @UniJSMethod(uiThread = false)
+    fun checkStoragePermission(callback: UniJSCallback?) {
+        val granted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Environment.isExternalStorageManager()
+        } else {
+            true // Android 10 及以下不需要此权限
+        }
+        callback?.invoke(mapOf("granted" to granted))
+    }
+
+    /** 跳转到"所有文件访问"权限设置页 */
+    @UniJSMethod(uiThread = true)
+    fun requestStoragePermission(callback: UniJSCallback?) {
+        val ctx = mWXSDKInstance?.context ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try {
+                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                    data = Uri.parse("package:${ctx.packageName}")
+                }
+                ctx.startActivity(intent)
+                callback?.invoke(mapOf("code" to 0, "msg" to "已打开设置页"))
+            } catch (e: Exception) {
+                // 部分机型不支持直接跳转到应用级页面
+                try {
+                    val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                    ctx.startActivity(intent)
+                    callback?.invoke(mapOf("code" to 0, "msg" to "已打开设置页"))
+                } catch (_: Exception) {
+                    callback?.invoke(mapOf("code" to -1, "msg" to "无法打开设置页"))
+                }
+            }
+        } else {
+            callback?.invoke(mapOf("code" to 0, "msg" to "无需授权"))
+        }
     }
 
     private fun isServiceRunning(ctx: Context, serviceClass: Class<*>): Boolean {

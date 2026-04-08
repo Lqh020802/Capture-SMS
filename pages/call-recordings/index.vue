@@ -33,6 +33,29 @@
             <text class="number">{{ item.sender || 'unknown' }}</text>
             <text class="file">{{ item.file_name || item.file_path }}</text>
             <text class="meta">时长 {{ formatDuration(item.duration) }} · {{ formatSize(item.file_size) }}</text>
+
+            <!-- 播放控制栏 -->
+            <view class="player-bar" v-if="item.file_path">
+                <view class="play-btn" @click="togglePlay(item)">
+                    <text class="play-btn-icon">{{ isPlaying(item) ? '||' : isActive(item) && playingState === 'paused' ? '||' : '' }}</text>
+                    <view v-if="isPlaying(item)" class="icon-pause">
+                        <view class="pause-line"></view>
+                        <view class="pause-line"></view>
+                    </view>
+                    <view v-else class="icon-play"></view>
+                </view>
+                <view class="progress-wrap" @click="seekByTouch(item, $event)">
+                    <view class="progress-bg">
+                        <view class="progress-fill" :style="{ width: getProgress(item) + '%' }"></view>
+                    </view>
+                </view>
+                <text class="player-time">
+                    {{ isActive(item) ? formatSec(playingCurrentTime) : '00:00' }}
+                    / {{ isActive(item) && playingDuration > 0
+                          ? formatSec(playingDuration)
+                          : formatDuration(item.duration) }}
+                </text>
+            </view>
         </view>
     </scroll-view>
 </view>
@@ -41,11 +64,17 @@
 <script>
 import { eventBus } from '@/utils/sms-monitor.js'
 import { clearCallRecordings, loadCallRecordings } from '@/utils/call-recording-store.js'
+import { getAudioPlayer, destroyAudioPlayer } from '@/utils/audio-player.js'
 
 export default {
     data() {
         return {
-            records: []
+            records: [],
+            playingPath: '',
+            playingState: 'stopped',
+            playingCurrentTime: 0,
+            playingDuration: 0,
+            playingPercent: 0
         }
     },
 
@@ -53,6 +82,24 @@ export default {
         this.refresh()
         this._listener = () => this.refresh()
         eventBus.on('call-recording', this._listener)
+
+        // 初始化播放器回调
+        const player = getAudioPlayer()
+        player.onStateChange((state, path) => {
+            this.playingState = state
+            this.playingPath = (state === 'stopped' || state === 'error') ? '' : path
+            if (state === 'stopped' || state === 'error') {
+                this.playingCurrentTime = 0
+                this.playingPercent = 0
+            }
+        })
+        player.onProgress(({ currentTime, duration, percent }, path) => {
+            if (path === this.playingPath) {
+                this.playingCurrentTime = currentTime
+                this.playingDuration = duration
+                this.playingPercent = percent
+            }
+        })
     },
 
     onShow() {
@@ -61,6 +108,7 @@ export default {
 
     onUnload() {
         if (this._listener) eventBus.off('call-recording', this._listener)
+        destroyAudioPlayer()
     },
 
     methods: {
@@ -74,12 +122,46 @@ export default {
                 content: '将删除所有通话录音记录',
                 success: (res) => {
                     if (!res.confirm) return
+                    destroyAudioPlayer()
                     clearCallRecordings()
                     this.records = []
                     uni.showToast({ title: '已清空', icon: 'success' })
                 }
             })
         },
+
+        // ─── 播放控制 ───────────────────────────────
+
+        isActive(item) {
+            return this.playingPath === item.file_path
+        },
+
+        isPlaying(item) {
+            return this.isActive(item) && this.playingState === 'playing'
+        },
+
+        getProgress(item) {
+            return this.isActive(item) ? (this.playingPercent * 100) : 0
+        },
+
+        togglePlay(item) {
+            const player = getAudioPlayer()
+            if (this.isPlaying(item)) {
+                player.pause()
+            } else if (this.isActive(item) && this.playingState === 'paused') {
+                player.resume()
+            } else {
+                this.playingPath = item.file_path
+                this.playingDuration = item.duration || 0
+                player.play(item.file_path)
+            }
+        },
+
+        seekByTouch() {
+            // 预留：点击进度条跳转播放位置
+        },
+
+        // ─── 格式化工具 ─────────────────────────────
 
         simLabel(slot) {
             if (slot === 0) return 'SIM1'
@@ -98,6 +180,11 @@ export default {
             const mm = String(Math.floor(value / 60)).padStart(2, '0')
             const ss = String(value % 60).padStart(2, '0')
             return `${mm}:${ss}`
+        },
+
+        formatSec(sec) {
+            const s = Math.floor(Number(sec) || 0)
+            return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0')
         },
 
         formatSize(size) {
@@ -133,4 +220,21 @@ export default {
 .number { display:block; margin-top:18rpx; font-size:34rpx; font-weight:700; color:#111827; }
 .file { display:block; margin-top:12rpx; font-size:24rpx; color:#2563eb; word-break:break-all; }
 .meta { display:block; margin-top:18rpx; padding-top:18rpx; border-top:1rpx solid #f1f5f9; font-size:24rpx; color:#4b5563; }
+
+/* 播放控制栏 */
+.player-bar { display:flex; align-items:center; gap:16rpx; margin-top:20rpx; padding-top:20rpx; border-top:1rpx solid #f1f5f9; }
+.play-btn { width:68rpx; height:68rpx; border-radius:50%; background:#111827; display:flex; align-items:center; justify-content:center; flex-shrink:0; position:relative; }
+.play-btn-icon { display:none; }
+
+/* 播放图标（三角形） */
+.icon-play { width:0; height:0; border-style:solid; border-width:12rpx 0 12rpx 20rpx; border-color:transparent transparent transparent #fff; margin-left:4rpx; }
+
+/* 暂停图标（两条竖线） */
+.icon-pause { display:flex; gap:6rpx; align-items:center; }
+.pause-line { width:6rpx; height:22rpx; background:#fff; border-radius:2rpx; }
+
+.progress-wrap { flex:1; padding:10rpx 0; }
+.progress-bg { height:8rpx; border-radius:4rpx; background:#e5e7eb; overflow:hidden; }
+.progress-fill { height:100%; border-radius:4rpx; background:linear-gradient(90deg,#10b981,#059669); transition:width 0.3s linear; }
+.player-time { font-size:22rpx; color:#6b7280; flex-shrink:0; min-width:150rpx; text-align:right; }
 </style>

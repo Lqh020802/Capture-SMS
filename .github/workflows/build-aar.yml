@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - 'android-plugin/**'
+      - '.github/workflows/build-aar.yml'
     branches: [ main, master ]
   workflow_dispatch:
 
