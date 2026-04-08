@@ -176,7 +176,7 @@ export default {
             try {
                 const ctx = plus.android.runtimeMainActivity()
                 plus.android.importClass(ctx)
-                ;['RECEIVE_SMS', 'READ_SMS', 'READ_PHONE_STATE', 'READ_CALL_LOG', 'READ_EXTERNAL_STORAGE'].forEach(name => {
+                ;['RECEIVE_SMS', 'READ_SMS', 'READ_PHONE_STATE', 'READ_CALL_LOG', 'READ_EXTERNAL_STORAGE', 'READ_MEDIA_AUDIO'].forEach(name => {
                     const full = 'android.permission.' + name
                     const ok = ctx.checkSelfPermission(full) === 0
                     msg += (ok ? '√' : '×') + ' ' + name + '\n'

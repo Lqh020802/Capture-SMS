@@ -5,10 +5,14 @@ import { saveMissedCall } from './missed-call-store.js'
 let isMonitoring = false
 const INSTALL_TS_KEY = 'sms_install_timestamp'
 const PHONE_REPORT_INTERVAL_MS = 10000
-const RECORD_SCAN_DELAY_MS = 4500
+const RECORD_SCAN_DELAY_MS = 8000
 const MIUI_RECORD_DIRS = [
     '/storage/emulated/0/MIUI/sound_recorder/call_rec',
-    '/sdcard/MIUI/sound_recorder/call_rec'
+    '/sdcard/MIUI/sound_recorder/call_rec',
+    '/storage/emulated/0/Sounds/CallRecordings',
+    '/storage/emulated/0/CallRecordings',
+    '/sdcard/Sounds/CallRecordings',
+    '/sdcard/CallRecordings'
 ]
 
 const eventBus = {
@@ -129,6 +133,11 @@ function _handlePhoneEvent(record) {
 
 function _scheduleRecordingScan(callRecord) {
     setTimeout(() => {
+        console.log('[PHONE] start recording scan:', JSON.stringify({
+            sender: callRecord.sender,
+            answered_timestamp: callRecord.answered_timestamp,
+            end_timestamp: callRecord.end_timestamp
+        }))
         const recording = _findLatestCallRecording(callRecord)
         if (!recording) {
             console.warn('[PHONE] no call recording matched')
@@ -152,61 +161,209 @@ function _scheduleRecordingScan(callRecord) {
 
 function _findLatestCallRecording(callRecord) {
     try {
-        const File = plus.android.importClass('java.io.File')
         const startAt = Number(callRecord.answered_timestamp || callRecord.ring_timestamp || callRecord.timestamp || Date.now())
         const endAt = Number(callRecord.end_timestamp || callRecord.timestamp || Date.now())
         const number = _normalizePhoneNumber(callRecord.sender || '')
-        const candidates = []
-
-        MIUI_RECORD_DIRS.forEach(dirPath => {
-            const dir = new File(dirPath)
-            plus.android.importClass(dir)
-            if (!dir.exists() || !dir.isDirectory()) return
-            const files = dir.listFiles()
-            if (!files) return
-            const length = plus.android.getAttribute(files, 'length')
-            for (let i = 0; i < length; i++) {
-                const file = files[i]
-                if (!file) continue
-                plus.android.importClass(file)
-                if (!file.isFile()) continue
-                const name = String(file.getName() || '')
-                const lower = name.toLowerCase()
-                if (!lower.endsWith('.mp3') && !lower.endsWith('.m4a') && !lower.endsWith('.amr') && !lower.endsWith('.aac') && !lower.endsWith('.wav')) continue
-                const modifiedAt = Number(file.lastModified())
-                if (modifiedAt < startAt - 60_000) continue
-                const path = String(file.getAbsolutePath() || '')
-                if (!path || path === _lastRecordingPath) continue
-                const numberMatched = number && _normalizePhoneNumber(name).includes(number)
-                const withinWindow = modifiedAt <= endAt + 120_000
-                const score = _scoreRecordingCandidate({ modifiedAt, startAt, endAt, numberMatched })
-                if (!withinWindow && !numberMatched) continue
-                candidates.push({
-                    path,
-                    name,
-                    size: Number(file.length()),
-                    modifiedAt,
-                    score
-                })
-            }
-        })
-
-        candidates.sort((a, b) => b.score - a.score || b.modifiedAt - a.modifiedAt)
-        return candidates[0] || null
+        const mediaStoreMatch = _findLatestCallRecordingFromMediaStore({ startAt, endAt, number })
+        if (mediaStoreMatch) return mediaStoreMatch
+        return _findLatestCallRecordingFromDirs({ startAt, endAt, number })
     } catch (e) {
         console.error('[PHONE] scan call recording failed', e)
         return null
     }
 }
 
-function _scoreRecordingCandidate({ modifiedAt, startAt, endAt, numberMatched }) {
-    const distanceToEnd = Math.abs(modifiedAt - endAt)
-    const distanceToStart = Math.abs(modifiedAt - startAt)
+function _findLatestCallRecordingFromMediaStore({ startAt, endAt, number }) {
+    let cursor = null
+    try {
+        const MediaStoreAudio = plus.android.importClass('android.provider.MediaStore$Audio$Media')
+        const activity = plus.android.runtimeMainActivity()
+        const resolver = activity.getContentResolver()
+        plus.android.importClass(resolver)
+        const uri = MediaStoreAudio.EXTERNAL_CONTENT_URI
+        const projection = ['_data', '_display_name', 'date_modified', '_size']
+        cursor = resolver.query(
+            uri,
+            projection,
+            '_data like ?',
+            ['%MIUI/sound_recorder/call_rec%'],
+            'date_modified DESC'
+        )
+        if (!cursor) {
+            console.log('[PHONE] MediaStore query returned null')
+            return null
+        }
+        plus.android.importClass(cursor)
+        const candidates = []
+        let count = 0
+        while (cursor.moveToNext() && count < 30) {
+            count++
+            const path = String(cursor.getString(cursor.getColumnIndex('_data')) || '')
+            const name = String(cursor.getString(cursor.getColumnIndex('_display_name')) || '')
+            const modifiedAt = Number(cursor.getLong(cursor.getColumnIndex('date_modified'))) * 1000
+            const fileSize = Number(cursor.getLong(cursor.getColumnIndex('_size')))
+            const fileNumber = _extractRecordingNumber(name)
+            const fileTimestamp = _extractRecordingTimestamp(name)
+            console.log('[PHONE] MediaStore file detail:', JSON.stringify({
+                path,
+                name,
+                modifiedAt,
+                fileSize,
+                fileNumber,
+                fileTimestamp
+            }))
+            if (!path || path === _lastRecordingPath) continue
+            const numberMatched = !!(number && fileNumber && fileNumber.includes(number))
+            const timeAnchor = fileTimestamp || modifiedAt
+            const withinWindow = timeAnchor >= startAt - 120_000 && timeAnchor <= endAt + 180_000
+            const score = _scoreRecordingCandidate({
+                modifiedAt,
+                fileTimestamp,
+                startAt,
+                endAt,
+                numberMatched
+            })
+            if (!withinWindow && !numberMatched) continue
+            candidates.push({
+                path,
+                name,
+                size: fileSize,
+                modifiedAt,
+                fileTimestamp,
+                score
+            })
+        }
+        candidates.sort((a, b) => b.score - a.score || b.modifiedAt - a.modifiedAt)
+        console.log('[PHONE] MediaStore candidate count:', candidates.length)
+        if (candidates[0]) {
+            console.log('[PHONE] MediaStore best candidate:', JSON.stringify(candidates[0]))
+        }
+        return candidates[0] || null
+    } catch (e) {
+        console.error('[PHONE] MediaStore query failed', e)
+        return null
+    } finally {
+        try { if (cursor) cursor.close() } catch (_) {}
+    }
+}
+
+function _findLatestCallRecordingFromDirs({ startAt, endAt, number }) {
+    try {
+        const File = plus.android.importClass('java.io.File')
+        const JavaArray = plus.android.importClass('java.lang.reflect.Array')
+        const candidates = []
+        MIUI_RECORD_DIRS.forEach(dirPath => {
+            const dir = new File(dirPath)
+            plus.android.importClass(dir)
+            const exists = !!dir.exists()
+            const isDirectory = exists && !!dir.isDirectory()
+            console.log('[PHONE] scan dir:', JSON.stringify({ dirPath, exists, isDirectory }))
+            if (!exists || !isDirectory) return
+            const files = dir.listFiles()
+            if (!files) {
+                console.log('[PHONE] dir has no files:', dirPath)
+                return
+            }
+            const length = JavaArray.getLength(files)
+            console.log('[PHONE] dir file count:', JSON.stringify({ dirPath, count: length }))
+            for (let i = 0; i < length; i++) {
+                const file = JavaArray.get(files, i)
+                if (!file) continue
+                plus.android.importClass(file)
+                if (!file.isFile()) continue
+                const name = String(file.getName() || '')
+                const lower = name.toLowerCase()
+                const path = String(file.getAbsolutePath() || '')
+                const modifiedAt = Number(file.lastModified())
+                const fileSize = Number(file.length())
+                const fileNumber = _extractRecordingNumber(name)
+                const fileTimestamp = _extractRecordingTimestamp(name)
+                console.log('[PHONE] dir file detail:', JSON.stringify({
+                    dirPath,
+                    name,
+                    path,
+                    modifiedAt,
+                    fileSize,
+                    fileNumber,
+                    fileTimestamp
+                }))
+                if (!lower.endsWith('.mp3') && !lower.endsWith('.m4a') && !lower.endsWith('.amr') && !lower.endsWith('.aac') && !lower.endsWith('.wav')) continue
+                if (!path || path === _lastRecordingPath) continue
+                const numberMatched = !!(number && fileNumber && fileNumber.includes(number))
+                const timeAnchor = fileTimestamp || modifiedAt
+                const withinWindow = timeAnchor >= startAt - 120_000 && timeAnchor <= endAt + 180_000
+                const score = _scoreRecordingCandidate({
+                    modifiedAt,
+                    fileTimestamp,
+                    startAt,
+                    endAt,
+                    numberMatched
+                })
+                if (!withinWindow && !numberMatched) continue
+                console.log('[PHONE] recording candidate:', JSON.stringify({
+                    dirPath,
+                    name,
+                    fileNumber,
+                    targetNumber: number,
+                    numberMatched,
+                    modifiedAt,
+                    fileTimestamp,
+                    startAt,
+                    endAt,
+                    score
+                }))
+                candidates.push({
+                    path,
+                    name,
+                    size: Number(file.length()),
+                    modifiedAt,
+                    fileTimestamp,
+                    score
+                })
+            }
+        })
+
+        candidates.sort((a, b) => b.score - a.score || b.modifiedAt - a.modifiedAt)
+        console.log('[PHONE] recording candidate count:', candidates.length)
+        if (candidates[0]) {
+            console.log('[PHONE] recording best candidate:', JSON.stringify(candidates[0]))
+        }
+        return candidates[0] || null
+    } catch (e) {
+        console.error('[PHONE] dir scan failed', e)
+        return null
+    }
+}
+
+function _scoreRecordingCandidate({ modifiedAt, fileTimestamp, startAt, endAt, numberMatched }) {
+    const anchor = fileTimestamp || modifiedAt
+    const distanceToEnd = Math.abs(anchor - endAt)
+    const distanceToStart = Math.abs(anchor - startAt)
     let score = 0
     if (numberMatched) score += 5000
+    if (fileTimestamp) score += 1500
     score -= Math.floor(distanceToEnd / 1000)
     score -= Math.floor(distanceToStart / 5000)
     return score
+}
+
+function _extractRecordingNumber(name) {
+    const match = String(name || '').match(/^(\d{6,})/)
+    return match ? match[1] : _normalizePhoneNumber(name)
+}
+
+function _extractRecordingTimestamp(name) {
+    const match = String(name || '').match(/_(\d{14})(?:\.[^.]+)?$/)
+    if (!match) return 0
+    const raw = match[1]
+    const year = Number(raw.slice(0, 4))
+    const month = Number(raw.slice(4, 6)) - 1
+    const day = Number(raw.slice(6, 8))
+    const hour = Number(raw.slice(8, 10))
+    const minute = Number(raw.slice(10, 12))
+    const second = Number(raw.slice(12, 14))
+    const ts = new Date(year, month, day, hour, minute, second).getTime()
+    return Number.isFinite(ts) ? ts : 0
 }
 
 let _pollTimer = null
