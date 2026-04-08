@@ -51,7 +51,7 @@ class SmsReceiver : BroadcastReceiver() {
 
         // 兜底直传：仅当未重复且 JS 层无监听（App 已被杀）时才直接上报
         if (emitted && !SmsEventEmitter.hasListener()) {
-            val url   = SmsEventEmitter.serverUrl.ifEmpty { "http://192.168.30.194:8014/sms/upload" }
+            val url   = SmsEventEmitter.serverUrl.ifEmpty { "http://192.168.30.70:8014/sms/upload" }
             val token = SmsEventEmitter.serverToken.ifEmpty { "" }
             val did   = SmsEventEmitter.deviceId
             SmsUploader.upload(url, token, did, record)

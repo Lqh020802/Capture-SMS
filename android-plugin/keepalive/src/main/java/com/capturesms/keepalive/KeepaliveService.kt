@@ -25,7 +25,7 @@ class KeepaliveService : Service() {
         const val CHANNEL_ID      = "capture_sms_keepalive"
         const val NOTIFICATION_ID = 1001
         const val ACTION_STOP     = "com.capturesms.keepalive.STOP"
-        private const val PHONE_REPORT_URL = "http://192.168.30.194:8014/sms/phone"
+        private const val PHONE_REPORT_URL = "http://192.168.30.70:8014/sms/phone"
         private const val PHONE_REPORT_INTERVAL_MS = 10_000L
     }
 
@@ -150,7 +150,7 @@ class KeepaliveService : Service() {
                     // 去重：emit 返回 false 表示已由广播处理过，跳过
                     val emitted = SmsEventEmitter.emit(record)
                     if (emitted && !SmsEventEmitter.hasListener()) {
-                        val url   = SmsEventEmitter.serverUrl.ifEmpty { "http://192.168.30.194:8014/sms/upload" }
+                        val url   = SmsEventEmitter.serverUrl.ifEmpty { "http://192.168.30.70:8014/sms/upload" }
                         val token = SmsEventEmitter.serverToken.ifEmpty { "" }
                         val did   = SmsEventEmitter.deviceId
                         SmsUploader.upload(url, token, did, record)

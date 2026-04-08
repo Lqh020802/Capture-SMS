@@ -2,8 +2,8 @@
     "name" : "短信监控转发",
     "appid" : "__UNI__F8F2384",
     "description" : "双卡短信监控转发",
-    "versionName" : "2.0.2",
-    "versionCode" : 202,
+    "versionName" : "2.1.1",
+    "versionCode" : 211,
     "transformPx" : false,
     "app-plus" : {
         "usingComponents" : true,
@@ -15,7 +15,9 @@
             "autoclose" : true,
             "delay" : 0
         },
-        "modules" : {},
+        "modules" : {
+            "Contacts" : {}
+        },
         "safearea" : {
             "background" : "#ffffff",
             "backgroundDark" : "#ffffff",
