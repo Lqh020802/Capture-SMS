@@ -1,11 +1,16 @@
 import { uploadSms, loadConfig, uploadPhoneStatus } from './api.js'
+import { saveCallRecording } from './call-recording-store.js'
 import { saveMissedCall } from './missed-call-store.js'
 
 let isMonitoring = false
 const INSTALL_TS_KEY = 'sms_install_timestamp'
 const PHONE_REPORT_INTERVAL_MS = 10000
+const RECORD_SCAN_DELAY_MS = 4500
+const MIUI_RECORD_DIRS = [
+    '/storage/emulated/0/MIUI/sound_recorder/call_rec',
+    '/sdcard/MIUI/sound_recorder/call_rec'
+]
 
-// 全局事件总线
 const eventBus = {
     listeners: {},
     on(event, fn) {
@@ -26,21 +31,21 @@ const eventBus = {
 }
 export { eventBus }
 
-// 模拟短信（测试用）
 export function simulateSms() {
     _handleSms({
-        sender    : '10086',
-        body      : '【模拟】验证码 888888，5分钟内有效。',
-        sim_slot  : 0,
-        sim_name  : 'SIM1',
+        sender: '10086',
+        body: 'mock sms',
+        sim_slot: 0,
+        sim_name: 'SIM1',
         phone_number: '',
-        timestamp : Date.now()
+        timestamp: Date.now()
     })
 }
 
 // #ifdef APP-PLUS
 let keepalivePlugin = null
 let _phoneReportTimer = null
+let _lastRecordingPath = ''
 function getPlugin() {
     if (!keepalivePlugin) {
         try { keepalivePlugin = uni.requireNativePlugin('Capture-Keepalive') } catch (e) {}
@@ -57,7 +62,7 @@ export function startSmsMonitor() {
     if (plugin) _startWithPlugin(plugin, installTimestamp)
     _ensurePhoneReportFallback(plugin)
     _startPolling()
-    _startWithPlusAndroid()                 
+    _startWithPlusAndroid()
     isMonitoring = true
     // #endif
 }
@@ -68,11 +73,8 @@ export function stopSmsMonitor() {
     if (plugin) plugin.stopService(() => {})
     _stopPhoneReportFallback()
     _stopPolling()
-    // 注销动态广播接收器，防止多次开关后重复注册
     if (_receiver) {
-        try {
-            plus.android.runtimeMainActivity().unregisterReceiver(_receiver)
-        } catch (e) {}
+        try { plus.android.runtimeMainActivity().unregisterReceiver(_receiver) } catch (e) {}
         _receiver = null
     }
     isMonitoring = false
@@ -80,7 +82,6 @@ export function stopSmsMonitor() {
 }
 
 export function getMonitorStatus() { return isMonitoring }
-
 
 function ensureInstallTimestamp() {
     let ts = Number(uni.getStorageSync(INSTALL_TS_KEY) || 0)
@@ -97,32 +98,120 @@ function _shouldUploadSms(record) {
     return !smsTimestamp || smsTimestamp >= installTimestamp
 }
 
-// ─── 1. 原生插件（后台保活）────────────────────────────────────────────
-
 function _startWithPlugin(plugin, installTimestamp) {
     const config = loadConfig()
     plugin.startService({
-        serverUrl : config.serverUrl || '',
-        token     : config.token     || '',
-        deviceId  : _getDeviceId(),
+        serverUrl: config.serverUrl || '',
+        token: config.token || '',
+        deviceId: _getDeviceId(),
         installTimestamp
     }, () => {})
     plugin.onSmsReceived((record) => { _handleSms(record) })
     if (typeof plugin.onPhoneEventReceived === 'function') {
-        plugin.onPhoneEventReceived((record) => {
-            console.log('[PHONE] missed call:', JSON.stringify(record))
-            saveMissedCall(record)
-            eventBus.emit('missed-call', record)
-        })
+        plugin.onPhoneEventReceived((record) => { _handlePhoneEvent(record) })
     }
-    console.log('[SMS] 原生插件已启动')
+    console.log('[SMS] native plugin started')
 }
 
-// ─── 2. 轮询数据库（主力，不受广播限制）──────────────────────────────
+function _handlePhoneEvent(record) {
+    const eventType = String(record && record.event_type || '')
+    if (eventType === 'missed_call') {
+        console.log('[PHONE] missed call:', JSON.stringify(record))
+        saveMissedCall(record)
+        eventBus.emit('missed-call', record)
+        return
+    }
+    if (eventType === 'call_completed') {
+        console.log('[PHONE] call completed:', JSON.stringify(record))
+        _scheduleRecordingScan(record)
+    }
+}
 
-let _pollTimer  = null
-let _lastSmsId  = -1
-let _polling    = false  // 防止并发执行
+function _scheduleRecordingScan(callRecord) {
+    setTimeout(() => {
+        const recording = _findLatestCallRecording(callRecord)
+        if (!recording) {
+            console.warn('[PHONE] no call recording matched')
+            return
+        }
+        const merged = {
+            ...callRecord,
+            event_type: 'call_recording',
+            file_path: recording.path,
+            file_name: recording.name,
+            file_size: recording.size,
+            modified_at: recording.modifiedAt,
+            timestamp: callRecord.end_timestamp || callRecord.timestamp || Date.now()
+        }
+        _lastRecordingPath = recording.path
+        saveCallRecording(merged)
+        eventBus.emit('call-recording', merged)
+        console.log('[PHONE] call recording:', JSON.stringify(merged))
+    }, RECORD_SCAN_DELAY_MS)
+}
+
+function _findLatestCallRecording(callRecord) {
+    try {
+        const File = plus.android.importClass('java.io.File')
+        const startAt = Number(callRecord.answered_timestamp || callRecord.ring_timestamp || callRecord.timestamp || Date.now())
+        const endAt = Number(callRecord.end_timestamp || callRecord.timestamp || Date.now())
+        const number = _normalizePhoneNumber(callRecord.sender || '')
+        const candidates = []
+
+        MIUI_RECORD_DIRS.forEach(dirPath => {
+            const dir = new File(dirPath)
+            plus.android.importClass(dir)
+            if (!dir.exists() || !dir.isDirectory()) return
+            const files = dir.listFiles()
+            if (!files) return
+            const length = plus.android.getAttribute(files, 'length')
+            for (let i = 0; i < length; i++) {
+                const file = files[i]
+                if (!file) continue
+                plus.android.importClass(file)
+                if (!file.isFile()) continue
+                const name = String(file.getName() || '')
+                const lower = name.toLowerCase()
+                if (!lower.endsWith('.mp3') && !lower.endsWith('.m4a') && !lower.endsWith('.amr') && !lower.endsWith('.aac') && !lower.endsWith('.wav')) continue
+                const modifiedAt = Number(file.lastModified())
+                if (modifiedAt < startAt - 60_000) continue
+                const path = String(file.getAbsolutePath() || '')
+                if (!path || path === _lastRecordingPath) continue
+                const numberMatched = number && _normalizePhoneNumber(name).includes(number)
+                const withinWindow = modifiedAt <= endAt + 120_000
+                const score = _scoreRecordingCandidate({ modifiedAt, startAt, endAt, numberMatched })
+                if (!withinWindow && !numberMatched) continue
+                candidates.push({
+                    path,
+                    name,
+                    size: Number(file.length()),
+                    modifiedAt,
+                    score
+                })
+            }
+        })
+
+        candidates.sort((a, b) => b.score - a.score || b.modifiedAt - a.modifiedAt)
+        return candidates[0] || null
+    } catch (e) {
+        console.error('[PHONE] scan call recording failed', e)
+        return null
+    }
+}
+
+function _scoreRecordingCandidate({ modifiedAt, startAt, endAt, numberMatched }) {
+    const distanceToEnd = Math.abs(modifiedAt - endAt)
+    const distanceToStart = Math.abs(modifiedAt - startAt)
+    let score = 0
+    if (numberMatched) score += 5000
+    score -= Math.floor(distanceToEnd / 1000)
+    score -= Math.floor(distanceToStart / 5000)
+    return score
+}
+
+let _pollTimer = null
+let _lastSmsId = -1
+let _polling = false
 
 function _ensurePhoneReportFallback(plugin) {
     if (!plugin || typeof plugin.isRunning !== 'function') {
@@ -165,7 +254,6 @@ function _stopPhoneReportFallback() {
 function _reportPhoneStatusFallback() {
     const simNames = _getActiveSimNames()
     if (!simNames.length) return
-
     simNames.forEach(name => {
         uploadPhoneStatus(name)
     })
@@ -204,9 +292,9 @@ function _getActiveSimNames() {
 
 function _startPolling() {
     _lastSmsId = _queryMaxSmsId()
-    console.log('[SMS] 开始轮询，初始ID:', _lastSmsId)
-    if (_pollTimer) clearInterval(_pollTimer)  // 防止重复注册
-    _pollTimer = setInterval(_pollNewSms, 5000)  // 5秒一次，降低资源占用
+    console.log('[SMS] poll start id:', _lastSmsId)
+    if (_pollTimer) clearInterval(_pollTimer)
+    _pollTimer = setInterval(_pollNewSms, 5000)
 }
 
 function _stopPolling() {
@@ -214,12 +302,10 @@ function _stopPolling() {
     _polling = false
 }
 
-
-
 function _queryMaxSmsId() {
     let cursor = null
     try {
-        const Uri      = plus.android.importClass('android.net.Uri')
+        const Uri = plus.android.importClass('android.net.Uri')
         const resolver = plus.android.runtimeMainActivity().getContentResolver()
         plus.android.importClass(resolver)
         cursor = resolver.query(Uri.parse('content://sms'), null, null, null, '_id DESC')
@@ -227,7 +313,7 @@ function _queryMaxSmsId() {
         plus.android.importClass(cursor)
         return cursor.moveToFirst() ? cursor.getLong(cursor.getColumnIndex('_id')) : 0
     } catch (e) {
-        console.error('[SMS] 查询初始ID失败', e)
+        console.error('[SMS] query init id failed', e)
         return 0
     } finally {
         try { if (cursor) cursor.close() } catch (_) {}
@@ -235,11 +321,11 @@ function _queryMaxSmsId() {
 }
 
 function _pollNewSms() {
-    if (_polling) return  // 上次还没跑完，跳过
+    if (_polling) return
     _polling = true
     let cursor = null
     try {
-        const Uri      = plus.android.importClass('android.net.Uri')
+        const Uri = plus.android.importClass('android.net.Uri')
         const resolver = plus.android.runtimeMainActivity().getContentResolver()
         plus.android.importClass(resolver)
         cursor = resolver.query(
@@ -253,38 +339,36 @@ function _pollNewSms() {
         plus.android.importClass(cursor)
 
         while (cursor.moveToNext()) {
-            const id   = cursor.getLong(cursor.getColumnIndex('_id'))
+            const id = cursor.getLong(cursor.getColumnIndex('_id'))
             const type = cursor.getInt(cursor.getColumnIndex('type'))
             if (id > _lastSmsId) _lastSmsId = id
-            if (type !== 1) continue  // type=1 收件箱
+            if (type !== 1) continue
 
             const sender = cursor.getString(cursor.getColumnIndex('address')) || ''
-            const body   = cursor.getString(cursor.getColumnIndex('body'))   || ''
-            const date   = cursor.getLong(cursor.getColumnIndex('date'))
-            const subId  = cursor.getInt(cursor.getColumnIndex('subscription_id'))
-            const slot   = _getSimSlotFromSubId(subId)
+            const body = cursor.getString(cursor.getColumnIndex('body')) || ''
+            const date = cursor.getLong(cursor.getColumnIndex('date'))
+            const subId = cursor.getInt(cursor.getColumnIndex('subscription_id'))
+            const slot = _getSimSlotFromSubId(subId)
             const phoneNumber = _getPhoneNumberFromSubId(subId, slot)
-            const name   = _getSimNameFromSubId(subId, slot, phoneNumber)
+            const name = _getSimNameFromSubId(subId, slot, phoneNumber)
 
-            console.log('[SMS] 轮询发现新短信 from:', sender)
+            console.log('[SMS] poll new sms from:', sender)
             _handleSms({ sender, body, sim_slot: slot, sim_name: name, phone_number: phoneNumber, timestamp: date })
         }
     } catch (e) {
-        console.error('[SMS] 轮询失败', e)
+        console.error('[SMS] poll failed', e)
     } finally {
         try { if (cursor) cursor.close() } catch (_) {}
         _polling = false
     }
 }
 
-// ─── 3. 广播接收器（辅助）────────────────────────────────────────────
-
 let _receiver = null
 
 function _startWithPlusAndroid() {
     try {
         const IntentFilter = plus.android.importClass('android.content.IntentFilter')
-        const SmsMessage   = plus.android.importClass('android.telephony.SmsMessage')
+        const SmsMessage = plus.android.importClass('android.telephony.SmsMessage')
         const filter = new IntentFilter()
         filter.addAction('android.provider.Telephony.SMS_RECEIVED')
         filter.setPriority(999)
@@ -295,37 +379,40 @@ function _startWithPlusAndroid() {
                 if (intent.getAction() !== 'android.provider.Telephony.SMS_RECEIVED') return
                 try {
                     const slotIndex = intent.getIntExtra('android.telephony.extra.SLOT_INDEX', -1)
-                    const subId     = intent.getIntExtra('subscription', -1)
+                    const subId = intent.getIntExtra('subscription', -1)
                     const phoneNumber = _getPhoneNumber(context, subId, slotIndex)
-                    const simName   = _getSimName(context, subId, slotIndex, phoneNumber)
-                    const bundle    = intent.getExtras()
+                    const simName = _getSimName(context, subId, slotIndex, phoneNumber)
+                    const bundle = intent.getExtras()
                     plus.android.importClass(bundle)
-                    const pdus   = bundle.get('pdus')
+                    const pdus = bundle.get('pdus')
                     const format = bundle.getString('format') || 'pdu'
-                    const len    = plus.android.getAttribute(pdus, 'length')
-                    let sender = '', body = ''
+                    const len = plus.android.getAttribute(pdus, 'length')
+                    let sender = ''
+                    let body = ''
                     for (let i = 0; i < len; i++) {
-                        const pdu    = plus.android.invoke(pdus, 'get', i)
+                        const pdu = plus.android.invoke(pdus, 'get', i)
                         const smsMsg = SmsMessage.createFromPdu(pdu, format)
                         plus.android.importClass(smsMsg)
                         sender += smsMsg.getOriginatingAddress() || ''
-                        body   += smsMsg.getMessageBody()        || ''
+                        body += smsMsg.getMessageBody() || ''
                     }
-                    console.log('[SMS] 广播收到短信 from:', sender)
+                    console.log('[SMS] broadcast sms from:', sender)
                     _handleSms({ sender, body, sim_slot: slotIndex, sim_name: simName, phone_number: phoneNumber, timestamp: Date.now() })
-                } catch (e) { console.error('[SMS] 广播解析失败', e) }
+                } catch (e) {
+                    console.error('[SMS] broadcast parse failed', e)
+                }
             }
         })
         plus.android.runtimeMainActivity().registerReceiver(_receiver, filter)
-        console.log('[SMS] 广播接收器已注册')
-    } catch (e) { console.error('[SMS] 广播注册失败', e) }
+        console.log('[SMS] broadcast receiver registered')
+    } catch (e) {
+        console.error('[SMS] broadcast register failed', e)
+    }
 }
-
-// ─── 公共处理 ─────────────────────────────────────────────────────────
 
 const _recentKeys = new Set()
 function _isDuplicate(record) {
-    const key = `${record.sender}:${String(record.body).slice(0,20)}:${Math.floor((record.timestamp||0) / 10000)}`
+    const key = `${record.sender}:${String(record.body).slice(0, 20)}:${Math.floor((record.timestamp || 0) / 10000)}`
     if (_recentKeys.has(key)) return true
     _recentKeys.add(key)
     if (_recentKeys.size > 100) _recentKeys.clear()
@@ -339,14 +426,14 @@ function _handleSms(record) {
     uploadSms(record)
 }
 
-// ─── 工具方法 ─────────────────────────────────────────────────────────
-
 function _getDeviceId() {
     try {
         const Settings = plus.android.importClass('android.provider.Settings')
         const activity = plus.android.runtimeMainActivity()
         return Settings.Secure.getString(activity.getContentResolver(), Settings.Secure.ANDROID_ID) || 'unknown'
-    } catch { return 'unknown' }
+    } catch {
+        return 'unknown'
+    }
 }
 
 function _getSimSlotFromSubId(subId) {
@@ -355,7 +442,10 @@ function _getSimSlotFromSubId(subId) {
         const manager = SubscriptionManager.from(plus.android.runtimeMainActivity())
         plus.android.importClass(manager)
         const info = manager.getActiveSubscriptionInfo(subId)
-        if (info) { plus.android.importClass(info); return info.getSimSlotIndex() }
+        if (info) {
+            plus.android.importClass(info)
+            return info.getSimSlotIndex()
+        }
     } catch {}
     return 0
 }
@@ -373,7 +463,6 @@ function _resolveSimName(info, slotIndex, phoneNumber = '') {
             if (displayName) return displayName
         }
     } catch {}
-
     return _formatPhoneLabel(phoneNumber)
 }
 
@@ -395,13 +484,13 @@ function _getSimName(context, subId, slotIndex, phoneNumber = '') {
         const info = subId !== -1
             ? manager.getActiveSubscriptionInfo(subId)
             : (manager.getActiveSubscriptionInfoList()?.toArray() || []).find(i => {
-                plus.android.importClass(i); return i.getSimSlotIndex() === slotIndex
-              })
+                plus.android.importClass(i)
+                return i.getSimSlotIndex() === slotIndex
+            })
         return _resolveSimName(info, slotIndex, phoneNumber)
     } catch {}
     return _resolveSimName(null, slotIndex, phoneNumber)
 }
-
 
 function _getPhoneNumberFromSubId(subId, slotIndex) {
     return _getPhoneNumber(plus.android.runtimeMainActivity(), subId, slotIndex)
@@ -457,9 +546,7 @@ function _getPhoneNumber(context, subId, slotIndex) {
                 plus.android.importClass(telephonyForSim)
             }
         }
-        const operatorName = telephonyForSim.getSimOperatorName() || ''
         const phoneNumber = _normalizePhoneNumber(telephonyForSim.getLine1Number())
-        console.log('[SMS] operator:', operatorName, 'phone:', phoneNumber)
         if (phoneNumber) return phoneNumber
     } catch (e) {
         console.error('[SMS] get phone number failed', e)
@@ -468,7 +555,5 @@ function _getPhoneNumber(context, subId, slotIndex) {
 }
 
 function _normalizePhoneNumber(phoneNumber) {
-    let value = (phoneNumber || '').trim()
-    if (value.startsWith('+86')) value = value.slice(3)
-    return value
+    return String(phoneNumber || '').replace(/\D/g, '')
 }

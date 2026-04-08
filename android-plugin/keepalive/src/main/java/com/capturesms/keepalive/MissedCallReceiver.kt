@@ -18,7 +18,8 @@ class MissedCallReceiver : BroadcastReceiver() {
         private var lastState: String? = TelephonyManager.EXTRA_STATE_IDLE
         private var incomingNumber: String = ""
         private var ringingTimestamp: Long = 0L
-        private var lastQueryAt: Long = 0L
+        private var answeredTimestamp: Long = 0L
+        private var lastMissedQueryAt: Long = 0L
         private val handler = Handler(Looper.getMainLooper())
     }
 
@@ -34,28 +35,82 @@ class MissedCallReceiver : BroadcastReceiver() {
             TelephonyManager.EXTRA_STATE_RINGING -> {
                 incomingNumber = number
                 ringingTimestamp = System.currentTimeMillis()
+                answeredTimestamp = 0L
                 lastState = state
                 Log.d(TAG, "incoming call ringing number=$incomingNumber")
             }
 
             TelephonyManager.EXTRA_STATE_OFFHOOK -> {
+                if (lastState == TelephonyManager.EXTRA_STATE_RINGING) {
+                    answeredTimestamp = System.currentTimeMillis()
+                }
                 lastState = state
                 Log.d(TAG, "call answered number=${if (number.isNotEmpty()) number else incomingNumber}")
             }
 
             TelephonyManager.EXTRA_STATE_IDLE -> {
-                if (lastState == TelephonyManager.EXTRA_STATE_RINGING) {
-                    val fallbackNumber = if (number.isNotEmpty()) number else incomingNumber
-                    val subId = extractSubscriptionId(intent)
-                    val slotIndex = extractSlotIndex(context, intent, subId)
-                    scheduleMissedCallCheck(context.applicationContext, subId, slotIndex, fallbackNumber, ringingTimestamp)
+                val subId = extractSubscriptionId(intent)
+                val slotIndex = extractSlotIndex(context, intent, subId)
+                val fallbackNumber = if (number.isNotEmpty()) number else incomingNumber
+
+                when (lastState) {
+                    TelephonyManager.EXTRA_STATE_RINGING -> {
+                        scheduleMissedCallCheck(
+                            context.applicationContext,
+                            subId,
+                            slotIndex,
+                            fallbackNumber,
+                            ringingTimestamp
+                        )
+                    }
+
+                    TelephonyManager.EXTRA_STATE_OFFHOOK -> {
+                        emitCompletedCall(
+                            context.applicationContext,
+                            subId,
+                            slotIndex,
+                            fallbackNumber,
+                            ringingTimestamp,
+                            answeredTimestamp,
+                            System.currentTimeMillis()
+                        )
+                    }
                 }
 
                 incomingNumber = ""
                 ringingTimestamp = 0L
+                answeredTimestamp = 0L
                 lastState = state
             }
         }
+    }
+
+    private fun emitCompletedCall(
+        context: Context,
+        subId: Int,
+        slotIndex: Int,
+        fallbackNumber: String,
+        ringAt: Long,
+        answeredAt: Long,
+        endAt: Long
+    ) {
+        val phoneNumber = PhoneUtils.getPhoneNumber(context, subId, slotIndex)
+        val simName = PhoneUtils.getSimName(context, subId, slotIndex, phoneNumber)
+        val record = mapOf(
+            "event_type" to "call_completed",
+            "sender" to if (fallbackNumber.isNotEmpty()) fallbackNumber else "未知号码",
+            "body" to "通话已结束",
+            "sim_slot" to slotIndex,
+            "sim_name" to simName,
+            "phone_number" to phoneNumber,
+            "timestamp" to endAt,
+            "ring_timestamp" to if (ringAt > 0L) ringAt else endAt,
+            "answered_timestamp" to if (answeredAt > 0L) answeredAt else endAt,
+            "end_timestamp" to endAt,
+            "duration" to if (answeredAt > 0L && endAt >= answeredAt) (endAt - answeredAt) / 1000L else 0L
+        )
+        Log.d(TAG, "call completed: $record")
+        SmsEventEmitter.emitPhoneEvent(record)
     }
 
     private fun scheduleMissedCallCheck(
@@ -92,8 +147,7 @@ class MissedCallReceiver : BroadcastReceiver() {
                     CallLog.Calls.NUMBER,
                     CallLog.Calls.DATE,
                     CallLog.Calls.TYPE,
-                    CallLog.Calls.DURATION,
-                    CallLog.Calls.PHONE_ACCOUNT_ID
+                    CallLog.Calls.DURATION
                 ),
                 "${CallLog.Calls.TYPE} = ? AND ${CallLog.Calls.DATE} >= ?",
                 arrayOf(
@@ -106,8 +160,8 @@ class MissedCallReceiver : BroadcastReceiver() {
             if (cursor == null || !cursor.moveToFirst()) return null
 
             val date = cursor.getLong(cursor.getColumnIndexOrThrow(CallLog.Calls.DATE))
-            if (date <= lastQueryAt) return null
-            lastQueryAt = date
+            if (date <= lastMissedQueryAt) return null
+            lastMissedQueryAt = date
 
             val number = PhoneUtils.normalizePhoneNumber(
                 cursor.getString(cursor.getColumnIndexOrThrow(CallLog.Calls.NUMBER))

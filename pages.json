@@ -17,6 +17,12 @@
             "style": {
                 "navigationBarTitleText": "未接来电"
             }
+        },
+        {
+            "path": "pages/call-recordings/index",
+            "style": {
+                "navigationBarTitleText": "通话录音"
+            }
         }
     ],
     "globalStyle": {
