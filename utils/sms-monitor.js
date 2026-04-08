@@ -1,7 +1,8 @@
-import { uploadSms, loadConfig } from './api.js'
+import { uploadSms, loadConfig, uploadPhoneStatus } from './api.js'
 
 let isMonitoring = false
 const INSTALL_TS_KEY = 'sms_install_timestamp'
+const PHONE_REPORT_INTERVAL_MS = 10000
 
 // 全局事件总线
 const eventBus = {
@@ -25,6 +26,7 @@ export function simulateSms() {
 
 // #ifdef APP-PLUS
 let keepalivePlugin = null
+let _phoneReportTimer = null
 function getPlugin() {
     if (!keepalivePlugin) {
         try { keepalivePlugin = uni.requireNativePlugin('Capture-Keepalive') } catch (e) {}
@@ -38,8 +40,9 @@ export function startSmsMonitor() {
     // #ifdef APP-PLUS
     const installTimestamp = ensureInstallTimestamp()
     const plugin = getPlugin()
-    if (plugin) _startWithPlugin(plugin, installTimestamp)   
-    _startPolling()                         
+    if (plugin) _startWithPlugin(plugin, installTimestamp)
+    _ensurePhoneReportFallback(plugin)
+    _startPolling()
     _startWithPlusAndroid()                 
     isMonitoring = true
     // #endif
@@ -49,6 +52,7 @@ export function stopSmsMonitor() {
     // #ifdef APP-PLUS
     const plugin = getPlugin()
     if (plugin) plugin.stopService(() => {})
+    _stopPhoneReportFallback()
     _stopPolling()
     // 注销动态广播接收器，防止多次开关后重复注册
     if (_receiver) {
@@ -98,6 +102,84 @@ function _startWithPlugin(plugin, installTimestamp) {
 let _pollTimer  = null
 let _lastSmsId  = -1
 let _polling    = false  // 防止并发执行
+
+function _ensurePhoneReportFallback(plugin) {
+    if (!plugin || typeof plugin.isRunning !== 'function') {
+        _startPhoneReportFallback()
+        return
+    }
+
+    setTimeout(() => {
+        try {
+            plugin.isRunning((result) => {
+                const running = !!(result && result.running)
+                if (running) {
+                    _stopPhoneReportFallback()
+                    console.log('[SMS] native keepalive running, skip frontend phone reporter')
+                } else {
+                    console.warn('[SMS] native keepalive unavailable, enable frontend phone reporter')
+                    _startPhoneReportFallback()
+                }
+            })
+        } catch (e) {
+            console.warn('[SMS] native keepalive check failed, enable frontend phone reporter', e)
+            _startPhoneReportFallback()
+        }
+    }, 1200)
+}
+
+function _startPhoneReportFallback() {
+    if (_phoneReportTimer) return
+    _reportPhoneStatusFallback()
+    _phoneReportTimer = setInterval(_reportPhoneStatusFallback, PHONE_REPORT_INTERVAL_MS)
+}
+
+function _stopPhoneReportFallback() {
+    if (_phoneReportTimer) {
+        clearInterval(_phoneReportTimer)
+        _phoneReportTimer = null
+    }
+}
+
+function _reportPhoneStatusFallback() {
+    const simNames = _getActiveSimNames()
+    if (!simNames.length) return
+
+    simNames.forEach(name => {
+        uploadPhoneStatus(name)
+    })
+}
+
+function _getActiveSimNames() {
+    try {
+        const SubscriptionManager = plus.android.importClass('android.telephony.SubscriptionManager')
+        const manager = SubscriptionManager.from(plus.android.runtimeMainActivity())
+        if (!manager) return []
+        plus.android.importClass(manager)
+
+        const infoList = manager.getActiveSubscriptionInfoList()
+        if (!infoList) return []
+        plus.android.importClass(infoList)
+
+        const list = []
+        const size = infoList.size()
+        for (let i = 0; i < size; i++) {
+            const info = infoList.get(i)
+            if (!info) continue
+            plus.android.importClass(info)
+            const slotIndex = info.getSimSlotIndex()
+            const subId = info.getSubscriptionId()
+            const number = _normalizePhoneNumber(info.getNumber())
+            const displayName = String(info.getDisplayName() || '').trim()
+            const value = (displayName || _formatPhoneLabel(number || _getPhoneNumberFromSubId(subId, slotIndex))).trim()
+            if (value && !list.includes(value)) list.push(value)
+        }
+        return list
+    } catch (e) {
+        console.error('[SMS] get active sim names failed', e)
+        return []
+    }
+}
 
 function _startPolling() {
     _lastSmsId = _queryMaxSmsId()

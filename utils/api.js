@@ -1,5 +1,6 @@
 // ─── 服务器配置 ────────────────────────────────────────────
 const DEFAULT_SERVER_URL = 'http://192.168.30.70:8014/sms/upload'
+const DEFAULT_PHONE_STATUS_URL = 'http://192.168.30.70:8014/sms/phone'
 const CONFIG_KEY = 'sms_config'
 const PENDING_KEY = 'sms_pending'
 
@@ -27,7 +28,7 @@ function _request(record, isNew) {
         phone_number: record.phone_number || '',
         timestamp: record.timestamp
     }
-console.log(data);
+    console.log(data);
 
     const header = { 'Content-Type': 'application/json' }
     if (config.token) header['Authorization'] = 'Bearer ' + config.token
@@ -85,6 +86,33 @@ export function retryPendingNow() {
     retryPending()
 }
 
+export function uploadPhoneStatus(phone) {
+    const value = String(phone || '').trim()
+    if (!value) return
+
+    const config = loadConfig()
+    const header = { 'Content-Type': 'application/json' }
+    if (config.token) header['Authorization'] = 'Bearer ' + config.token
+
+    uni.request({
+        url: getPhoneStatusUrl(config.serverUrl),
+        method: 'POST',
+        data: { phone: value },
+        header,
+        timeout: 10000,
+        success(res) {
+            if (res.statusCode >= 200 && res.statusCode < 300) {
+                console.log('[API] phone status uploaded', value)
+            } else {
+                console.error('[API] phone status failed', res.statusCode, res.data)
+            }
+        },
+        fail(err) {
+            console.error('[API] phone status network error', err)
+        }
+    })
+}
+
 // ─── 重试缓存 ────────────────────────────────────────────────
 
 function retryPending() {
@@ -123,6 +151,14 @@ function savePendingList(list) {
 }
 
 // ─── 设备 ID ─────────────────────────────────────────────────
+
+function getPhoneStatusUrl(serverUrl = '') {
+    const url = String(serverUrl || '').trim()
+    if (!url) return DEFAULT_PHONE_STATUS_URL
+    if (/\/sms\/upload\/?$/i.test(url)) return url.replace(/\/upload\/?$/i, '/phone')
+    if (/\/upload\/?$/i.test(url)) return url.replace(/\/upload\/?$/i, '/phone')
+    return DEFAULT_PHONE_STATUS_URL
+}
 
 function getDeviceId() {
     // #ifdef APP-PLUS
