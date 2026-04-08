@@ -68,7 +68,10 @@ object PhoneUtils {
     }
 
     fun normalizePhoneNumber(phoneNumber: String?): String {
-        return phoneNumber.orEmpty().removePrefix("+86").trim()
+        return phoneNumber.orEmpty()
+            .removePrefix("+86")
+            .replace(Regex("\\D"), "")
+            .trim()
     }
 
     private fun fallbackSimName(phoneNumber: String): String {

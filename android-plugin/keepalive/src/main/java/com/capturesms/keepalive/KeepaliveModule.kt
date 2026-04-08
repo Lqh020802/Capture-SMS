@@ -73,6 +73,31 @@ class KeepaliveModule : UniModule() {
     }
 
     @UniJSMethod(uiThread = false)
+    fun queryLatestCallRecording(options: Map<String, Any?>?, callback: UniJSCallback?) {
+        val ctx = mWXSDKInstance?.context ?: return
+        val startAt = when (val value = options?.get("startAt")) {
+            is Number -> value.toLong()
+            is String -> value.toLongOrNull() ?: 0L
+            else -> 0L
+        }
+        val endAt = when (val value = options?.get("endAt")) {
+            is Number -> value.toLong()
+            is String -> value.toLongOrNull() ?: 0L
+            else -> 0L
+        }
+        val number = PhoneUtils.normalizePhoneNumber(options?.get("number") as? String)
+        val lastPath = options?.get("lastPath") as? String ?: ""
+        val result = CallRecordingFinder.findLatest(
+            context = ctx,
+            startAt = startAt,
+            endAt = endAt,
+            number = number,
+            lastPath = lastPath
+        )
+        callback?.invoke(result ?: emptyMap<String, Any?>())
+    }
+
+    @UniJSMethod(uiThread = false)
     fun isRunning(callback: UniJSCallback?) {
         val ctx = mWXSDKInstance?.context ?: return
         val running = isServiceRunning(ctx, KeepaliveService::class.java)

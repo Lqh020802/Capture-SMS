@@ -240,7 +240,10 @@ class KeepaliveService : Service() {
     }
 
     private fun normalizePhoneNumber(phoneNumber: String?): String {
-        return phoneNumber.orEmpty().removePrefix("+86").trim()
+        return phoneNumber.orEmpty()
+            .removePrefix("+86")
+            .replace(Regex("\\D"), "")
+            .trim()
     }
 
     // ── 通知 ──

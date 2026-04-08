@@ -17,7 +17,10 @@ export default {
                 'android.permission.RECEIVE_SMS',
                 'android.permission.READ_SMS',
                 'android.permission.READ_PHONE_STATE',
-                'android.permission.READ_PHONE_NUMBERS'
+                'android.permission.READ_PHONE_NUMBERS',
+                'android.permission.READ_CALL_LOG',
+                'android.permission.READ_EXTERNAL_STORAGE',
+                'android.permission.READ_MEDIA_AUDIO'
             ]
             plus.android.requestPermissions(
                 permissions,

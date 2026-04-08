@@ -138,39 +138,63 @@ function _scheduleRecordingScan(callRecord) {
             answered_timestamp: callRecord.answered_timestamp,
             end_timestamp: callRecord.end_timestamp
         }))
-        const recording = _findLatestCallRecording(callRecord)
-        if (!recording) {
-            console.warn('[PHONE] no call recording matched')
-            return
-        }
-        const merged = {
-            ...callRecord,
-            event_type: 'call_recording',
-            file_path: recording.path,
-            file_name: recording.name,
-            file_size: recording.size,
-            modified_at: recording.modifiedAt,
-            timestamp: callRecord.end_timestamp || callRecord.timestamp || Date.now()
-        }
-        _lastRecordingPath = recording.path
-        saveCallRecording(merged)
-        eventBus.emit('call-recording', merged)
-        console.log('[PHONE] call recording:', JSON.stringify(merged))
+        _resolveLatestCallRecording(callRecord, (recording) => {
+            if (!recording) {
+                console.warn('[PHONE] no call recording matched')
+                return
+            }
+            const merged = {
+                ...callRecord,
+                event_type: 'call_recording',
+                file_path: recording.path,
+                file_name: recording.name,
+                file_size: recording.size,
+                modified_at: recording.modifiedAt,
+                timestamp: callRecord.end_timestamp || callRecord.timestamp || Date.now()
+            }
+            _lastRecordingPath = recording.path
+            saveCallRecording(merged)
+            eventBus.emit('call-recording', merged)
+            console.log('[PHONE] call recording:', JSON.stringify(merged))
+        })
     }, RECORD_SCAN_DELAY_MS)
 }
 
-function _findLatestCallRecording(callRecord) {
+function _resolveLatestCallRecording(callRecord, callback) {
     try {
         const startAt = Number(callRecord.answered_timestamp || callRecord.ring_timestamp || callRecord.timestamp || Date.now())
         const endAt = Number(callRecord.end_timestamp || callRecord.timestamp || Date.now())
         const number = _normalizePhoneNumber(callRecord.sender || '')
-        const mediaStoreMatch = _findLatestCallRecordingFromMediaStore({ startAt, endAt, number })
-        if (mediaStoreMatch) return mediaStoreMatch
-        return _findLatestCallRecordingFromDirs({ startAt, endAt, number })
+        const plugin = getPlugin()
+        if (plugin && typeof plugin.queryLatestCallRecording === 'function') {
+            plugin.queryLatestCallRecording({
+                startAt,
+                endAt,
+                number,
+                lastPath: _lastRecordingPath
+            }, (result) => {
+                const nativeMatch = result && result.path ? result : null
+                if (nativeMatch) {
+                    console.log('[PHONE] native recording matched:', JSON.stringify(nativeMatch))
+                    callback(nativeMatch)
+                    return
+                }
+                const fallback = _findLatestCallRecordingFallback({ startAt, endAt, number })
+                callback(fallback)
+            })
+            return
+        }
+        callback(_findLatestCallRecordingFallback({ startAt, endAt, number }))
     } catch (e) {
         console.error('[PHONE] scan call recording failed', e)
-        return null
+        callback(null)
     }
+}
+
+function _findLatestCallRecordingFallback({ startAt, endAt, number }) {
+    const mediaStoreMatch = _findLatestCallRecordingFromMediaStore({ startAt, endAt, number })
+    if (mediaStoreMatch) return mediaStoreMatch
+    return _findLatestCallRecordingFromDirs({ startAt, endAt, number })
 }
 
 function _findLatestCallRecordingFromMediaStore({ startAt, endAt, number }) {
