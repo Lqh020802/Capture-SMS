@@ -96,8 +96,9 @@ object CallRecordingFinder {
             val candidate = buildCandidate(path, name, size, modifiedAt, startAt, endAt, number)
                 ?: continue
 
-            if (best == null || candidate.score > best.score ||
-                (candidate.score == best?.score && candidate.modifiedAt > best!!.modifiedAt)
+            val current = best
+            if (current == null || candidate.score > current.score ||
+                (candidate.score == current.score && candidate.modifiedAt > current.modifiedAt)
             ) {
                 best = candidate
             }
@@ -132,8 +133,9 @@ object CallRecordingFinder {
                     number = number
                 ) ?: return@forEach
 
-                if (best == null || candidate.score > best.score ||
-                    (candidate.score == best?.score && candidate.modifiedAt > best!!.modifiedAt)
+                val current = best
+                if (current == null || candidate.score > current.score ||
+                    (candidate.score == current.score && candidate.modifiedAt > current.modifiedAt)
                 ) {
                     best = candidate
                 }
