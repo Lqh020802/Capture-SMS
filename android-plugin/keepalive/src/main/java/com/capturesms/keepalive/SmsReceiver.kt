@@ -90,7 +90,7 @@ class SmsReceiver : BroadcastReceiver() {
 
     private fun fallbackSimName(slotIndex: Int, phoneNumber: String): String {
         val normalizedPhone = normalizePhoneNumber(phoneNumber)
-        if (normalizedPhone.isNotEmpty()) return "Phone $normalizedPhone"
+        if (normalizedPhone.isNotEmpty()) return normalizedPhone
         return ""
     }
 
